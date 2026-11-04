@@ -86,8 +86,9 @@ jobs:
         with:
           path: /home/runner/.cache/fastembed
           key: fastembed-${{ hashFiles('data/retriever.json', 'requirements-hybrid.lock') }}
-      # cancelado também grava: restaurou o mais novo antes, então o que grava é ele + o que calculou (nunca menos)
-      - if: always() && matrix.part == 'core'
+      # grava no verde e no vermelho (o check.py roda todas as etapas mesmo com falha: o eval gate vetoriza tudo), nunca
+      # no cancelado: ele pode ter restaurado antes de o cheio existir e gravaria um parcial mais novo que o cheio
+      - if: ${{ !cancelled() && matrix.part == 'core' }}
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
