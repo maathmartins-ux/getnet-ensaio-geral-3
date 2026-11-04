@@ -1,0 +1,47 @@
+{"qid": "q020", "essential": [["c5", "c6"], ["c2", "c6"]]}
+{"qid": "q021", "essential": [["c1"], ["c3"]]}
+{"qid": "q022", "essential": [["c8"]]}
+{"qid": "q023", "essential": [["c1"], ["c9"], ["c0"]]}
+{"qid": "q024", "essential": []}
+{"qid": "q025", "essential": [["c3", "c11"], ["c7"]]}
+{"qid": "q026", "essential": [["c6", "c10", "c12"]]}
+{"qid": "q027", "essential": [["c6", "c12"], ["c5", "c15"]]}
+{"qid": "q028", "essential": [["c2", "c4"]]}
+{"qid": "q029", "essential": [["c10"], ["c7"]]}
+{"qid": "q030", "essential": [["c10"], ["c4"]]}
+{"qid": "q031", "essential": [["c2"], ["c5"]]}
+{"qid": "q032", "essential": [["c8"]]}
+{"qid": "q033", "essential": [["c11"]]}
+{"qid": "q034", "essential": [["c4", "c7"]]}
+{"qid": "q035", "essential": [["c4"]]}
+{"qid": "q036", "essential": [["c6", "c14"]]}
+{"qid": "q037", "essential": [["c17"]]}
+{"qid": "q038", "essential": [["c6", "c11"]]}
+{"qid": "q039", "essential": [["c12", "c7", "c14"], ["c8", "c13"]]}
+{"qid": "q040", "essential": [["c13"]]}
+{"qid": "q041", "essential": [["c14", "c1"], ["c14", "c10", "c12"]]}
+{"qid": "q042", "essential": [["c12", "c7"]]}
+{"qid": "q043", "essential": [["c5"], ["c15"]]}
+{"qid": "q044", "essential": [["c10", "c0", "c6"]]}
+{"qid": "q045", "essential": [["c7", "c11"]]}
+{"qid": "q046", "essential": [["c5"]]}
+{"qid": "q047", "essential": [["c10", "c8", "c1"], ["c6", "c1"]]}
+{"qid": "q048", "essential": [["c8"]]}
+{"qid": "q049", "essential": [["c4"], ["c3"]]}
+{"qid": "q050", "essential": [["c6", "c13"]]}
+{"qid": "q051", "essential": [["c2"]]}
+{"qid": "q052", "essential": [["c8"]]}
+{"qid": "q053", "essential": [["c5"], ["c1"]]}
+{"qid": "q054", "essential": [["c8", "c7"]]}
+{"qid": "q055", "essential": [["c12"]]}
+{"qid": "q056", "essential": [["c8"]]}
+{"qid": "q057", "essential": [["c16"], ["c5"], ["c2"]]}
+{"qid": "q058", "essential": [["c9", "c4"]]}
+{"qid": "q059", "essential": [["c14"]]}
+{"qid": "q060", "essential": [["c3"]]}
+{"qid": "q061", "essential": [["c13"]]}
+{"qid": "q062", "essential": [["c10"]]}
+{"qid": "q063", "essential": [["c1"]]}
+{"qid": "q064", "essential": [["c16"]]}
+{"qid": "q065", "essential": [["c5"]]}
+{"qid": "q066", "essential": [["c6"]]}

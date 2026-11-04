@@ -1,0 +1,19 @@
+{
+  "_doc": "Glossário pt -> en do DESAFIO (agents.expand_query): chave = termo do corpus em português; valor = como o cliente pergunta em inglês. Preenchido pela frente K.",
+  "Get Conta": ["bank account", "digital account", "account"],
+  "conta": ["bank account", "account"],
+  "maquininha": ["card machine", "card reader", "terminal", "POS"],
+  "antecipação": ["receivables advance", "advance", "early payout", "anticipation"],
+  "parcelas": ["installments", "instalments"],
+  "Link de Pagamento": ["Payment Link", "payment link"],
+  "recusa": ["decline", "declined", "refused", "denied"],
+  "conexão": ["connect to the internet", "internet connection", "connectivity", "offline"],
+  "chip": ["SIM card", "SIM"],
+  "wi-fi": ["wifi", "wireless"],
+  "taxa": ["fee", "rate", "fees"],
+  "crediário": ["store credit", "installment plan", "credit plan"],
+  "Pix": ["Pix", "instant payment"],
+  "domicílio bancário": ["bank account", "receiving account", "payout account", "conta bancária", "conta no banco"],
+  "chave Pix": ["Pix key"],
+  "antecipação de vendas": ["receivables advance", "advance on receivables", "sales advance", "antecipação de recebíveis", "antecipar recebíveis"]
+}

@@ -1,0 +1,16 @@
+# Varredura de segredos no CI (gitleaks). Regras padrão + exceções SÓ para os segredos de teste do kit, que são
+# falsos por construção (o container do smoke do check.py sobe com o dele; o teste de réplicas gera um aleatório a
+# cada execução e não tem exceção). Segredo real nunca entra aqui: vai no .env (ignorado pelo git) ou nas variáveis
+# do ambiente da nuvem.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "segredos de TESTE do kit"
+# evals/cassettes/: gravações das respostas do LLM (chave = hash do pedido, assinaturas do thinking) acusadas como
+# generic-api-key (sem esta exceção: 1492 achados e CI vermelha); nenhuma credencial entra nelas, e o teste
+# test_v54_cassettes_have_no_credentials varre essas gravações atrás de chave de API de verdade.
+paths = ['''^tests/''', '''^evals/cassettes/''']
+regexes = [
+  '''test-secret''',
+]

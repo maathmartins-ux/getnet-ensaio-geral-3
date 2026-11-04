@@ -1,0 +1,30 @@
+{
+  "raters": [
+    "labels_A",
+    "labels_B"
+  ],
+  "agreement": {
+    "labels_A×labels_B": {
+      "questions": 47,
+      "jaccard_mean": 0.908,
+      "identical": 37
+    }
+  },
+  "questions_labelled": 46,
+  "drafts_labelled": {
+    "official": 6,
+    "page": 40
+  },
+  "no_essential": [
+    "My card machine is showing a transaction decline error."
+  ],
+  "no_agreement": [],
+  "back_to_drafts": [],
+  "unmatched_rules": [],
+  "gold": [
+    "evals/retrieval.d/official.jsonl",
+    "evals/retrieval.d/page.jsonl"
+  ],
+  "removed": [],
+  "drafts": []
+}
