@@ -77,12 +77,12 @@ jobs:
       # subindo com --network none (scripts/smoke_network_none.py).
       - run: python scripts/check.py --docker --scale --part ${{ matrix.part }}
       - if: always()
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/runner/.cache/fastembed
           key: fastembed-${{ hashFiles('data/retriever.json', 'requirements-hybrid.lock') }}
       - if: always()
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             var/embeddings
