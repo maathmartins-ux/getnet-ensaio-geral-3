@@ -1,0 +1,461 @@
+{
+  "_doc": "gerado por `python -m evals.run_evals --choose-retriever --apply`; não edite à mão",
+  "chosen_at": "2026-11-04T20:36:50+00:00",
+  "git_sha": "6e72c7a",
+  "gold": "retrieval.jsonl",
+  "criterion": "padrão do kit (KIT_RETRIEVER em src/app/config.py), medido no relógio com --keep-default: a latência medida com a máquina carregada (eval, fumaça e autores ao mesmo tempo) não troca o buscador no meio da entrega; o portão é o calibrado nesta medida",
+  "latency_budget_ms": 1500.0,
+  "ram_budget_mb": 4096.0,
+  "chosen": "dense+windows+cross:base",
+  "choice": {
+    "retriever": "dense",
+    "embed_model": "intfloat/multilingual-e5-large",
+    "rerank": "cross",
+    "rerank_model": "BAAI/bge-reranker-v2-m3-int8",
+    "rerank_pool": 10,
+    "rerank_chars": 600,
+    "rerank_order": "base",
+    "windows": true,
+    "gate": {
+      "min_score": 7.939,
+      "min_cosine": 0.841,
+      "min_rerank": -5.284447
+    }
+  },
+  "rejected": {},
+  "measured": {
+    "bm25": {
+      "cases": 46,
+      "recall@3": 0.822,
+      "recall@5": 0.877,
+      "mrr": 0.801,
+      "hit@3": 0.87,
+      "hit@3_ci": {
+        "k": 40,
+        "n": 46,
+        "lo": 74.3,
+        "hi": 93.9
+      },
+      "ndcg@3": 0.783,
+      "page": {
+        "recall@3": 0.886,
+        "mrr": 0.935,
+        "hit@3": 0.957,
+        "hit@3_ci": {
+          "k": 44,
+          "n": 46,
+          "lo": 85.5,
+          "hi": 98.8
+        }
+      },
+      "latency_ms": {
+        "p50": 0.6,
+        "p95": 0.9,
+        "mean": 0.6
+      },
+      "memory_mb": 42.5,
+      "dedupe_aliases": 23,
+      "fallback": "",
+      "config": {
+        "retriever": "bm25"
+      },
+      "gate": {
+        "min_score": 8.908,
+        "min_cosine": 2.0,
+        "pos_answered": 0.826,
+        "neg_refused": 1.0,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 38,
+          "n": 46,
+          "lo": 69.3,
+          "hi": 90.9
+        },
+        "neg_ci": {
+          "k": 19,
+          "n": 19,
+          "lo": 83.2,
+          "hi": 100.0
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85
+      },
+      "rerank_gate": null,
+      "separation": {
+        "auc": 0.989,
+        "gap": -2.585,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 4
+        }
+      },
+      "separation_rerank": null
+    },
+    "dense": {
+      "cases": 46,
+      "recall@3": 0.862,
+      "recall@5": 0.902,
+      "mrr": 0.888,
+      "hit@3": 0.913,
+      "hit@3_ci": {
+        "k": 42,
+        "n": 46,
+        "lo": 79.7,
+        "hi": 96.6
+      },
+      "ndcg@3": 0.858,
+      "page": {
+        "recall@3": 0.922,
+        "mrr": 0.967,
+        "hit@3": 0.978,
+        "hit@3_ci": {
+          "k": 45,
+          "n": 46,
+          "lo": 88.7,
+          "hi": 99.6
+        }
+      },
+      "latency_ms": {
+        "p50": 73.2,
+        "p95": 223.7,
+        "mean": 89.8
+      },
+      "memory_mb": 1541.7,
+      "dedupe_aliases": 23,
+      "fallback": "",
+      "config": {
+        "retriever": "dense",
+        "embed_model": "intfloat/multilingual-e5-large"
+      },
+      "gate": {
+        "min_score": 7.939,
+        "min_cosine": 0.849,
+        "pos_answered": 0.913,
+        "neg_refused": 1.0,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 42,
+          "n": 46,
+          "lo": 79.7,
+          "hi": 96.6
+        },
+        "neg_ci": {
+          "k": 19,
+          "n": 19,
+          "lo": 83.2,
+          "hi": 100.0
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85
+      },
+      "rerank_gate": null,
+      "separation": {
+        "auc": 0.984,
+        "gap": -0.025,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      },
+      "separation_rerank": null
+    },
+    "dense+windows": {
+      "cases": 46,
+      "recall@3": 0.884,
+      "recall@5": 0.924,
+      "mrr": 0.909,
+      "hit@3": 0.935,
+      "hit@3_ci": {
+        "k": 43,
+        "n": 46,
+        "lo": 82.5,
+        "hi": 97.8
+      },
+      "ndcg@3": 0.88,
+      "page": {
+        "recall@3": 0.922,
+        "mrr": 0.967,
+        "hit@3": 0.978,
+        "hit@3_ci": {
+          "k": 45,
+          "n": 46,
+          "lo": 88.7,
+          "hi": 99.6
+        }
+      },
+      "latency_ms": {
+        "p50": 67.1,
+        "p95": 87.6,
+        "mean": 67.6
+      },
+      "memory_mb": 1541.7,
+      "dedupe_aliases": 23,
+      "fallback": "",
+      "config": {
+        "retriever": "dense",
+        "embed_model": "intfloat/multilingual-e5-large",
+        "windows": true
+      },
+      "gate": {
+        "min_score": 7.939,
+        "min_cosine": 0.841,
+        "pos_answered": 0.935,
+        "neg_refused": 0.947,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 43,
+          "n": 46,
+          "lo": 82.5,
+          "hi": 97.8
+        },
+        "neg_ci": {
+          "k": 18,
+          "n": 19,
+          "lo": 75.4,
+          "hi": 99.1
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85
+      },
+      "rerank_gate": null,
+      "separation": {
+        "auc": 0.997,
+        "gap": -0.007,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      },
+      "separation_rerank": null
+    },
+    "dense+windows+cross": {
+      "cases": 46,
+      "recall@3": 0.909,
+      "recall@5": 0.949,
+      "mrr": 0.924,
+      "hit@3": 0.957,
+      "hit@3_ci": {
+        "k": 44,
+        "n": 46,
+        "lo": 85.5,
+        "hi": 98.8
+      },
+      "ndcg@3": 0.897,
+      "page": {
+        "recall@3": 0.946,
+        "mrr": 0.964,
+        "hit@3": 1.0,
+        "hit@3_ci": {
+          "k": 46,
+          "n": 46,
+          "lo": 92.3,
+          "hi": 100.0
+        }
+      },
+      "latency_ms": {
+        "p50": 933.0,
+        "p95": 1081.2,
+        "mean": 942.0
+      },
+      "memory_mb": 2378.2,
+      "dedupe_aliases": 23,
+      "fallback": "",
+      "config": {
+        "retriever": "dense",
+        "embed_model": "intfloat/multilingual-e5-large",
+        "rerank": "cross",
+        "rerank_model": "BAAI/bge-reranker-v2-m3-int8",
+        "rerank_pool": 10,
+        "rerank_chars": 600,
+        "windows": true
+      },
+      "gate": {
+        "min_score": 6.939,
+        "min_cosine": 0.839,
+        "pos_answered": 0.957,
+        "neg_refused": 0.947,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 44,
+          "n": 46,
+          "lo": 85.5,
+          "hi": 98.8
+        },
+        "neg_ci": {
+          "k": 18,
+          "n": 19,
+          "lo": 75.4,
+          "hi": 99.1
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85
+      },
+      "rerank_gate": {
+        "min_rerank": -5.284447,
+        "pos_answered": 1.0,
+        "neg_refused": 1.0,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 46,
+          "n": 46,
+          "lo": 92.3,
+          "hi": 100.0
+        },
+        "neg_ci": {
+          "k": 19,
+          "n": 19,
+          "lo": 83.2,
+          "hi": 100.0
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85,
+        "enough": true
+      },
+      "separation": {
+        "auc": 0.995,
+        "gap": -0.007,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      },
+      "separation_rerank": {
+        "auc": 1.0,
+        "gap": 0.597,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      }
+    },
+    "dense+windows+cross:base": {
+      "cases": 46,
+      "recall@3": 0.884,
+      "recall@5": 0.924,
+      "mrr": 0.909,
+      "hit@3": 0.935,
+      "hit@3_ci": {
+        "k": 43,
+        "n": 46,
+        "lo": 82.5,
+        "hi": 97.8
+      },
+      "ndcg@3": 0.88,
+      "page": {
+        "recall@3": 0.922,
+        "mrr": 0.967,
+        "hit@3": 0.978,
+        "hit@3_ci": {
+          "k": 45,
+          "n": 46,
+          "lo": 88.7,
+          "hi": 99.6
+        }
+      },
+      "latency_ms": {
+        "p50": 922.7,
+        "p95": 1150.5,
+        "mean": 947.7
+      },
+      "memory_mb": 2378.2,
+      "dedupe_aliases": 23,
+      "fallback": "",
+      "config": {
+        "retriever": "dense",
+        "embed_model": "intfloat/multilingual-e5-large",
+        "rerank": "cross",
+        "rerank_model": "BAAI/bge-reranker-v2-m3-int8",
+        "rerank_pool": 10,
+        "rerank_chars": 600,
+        "rerank_order": "base",
+        "windows": true
+      },
+      "gate": {
+        "min_score": 7.939,
+        "min_cosine": 0.841,
+        "pos_answered": 0.935,
+        "neg_refused": 0.947,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 43,
+          "n": 46,
+          "lo": 82.5,
+          "hi": 97.8
+        },
+        "neg_ci": {
+          "k": 18,
+          "n": 19,
+          "lo": 75.4,
+          "hi": 99.1
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85
+      },
+      "rerank_gate": {
+        "min_rerank": -5.284447,
+        "pos_answered": 1.0,
+        "neg_refused": 1.0,
+        "meets_floor": true,
+        "pos_ci": {
+          "k": 46,
+          "n": 46,
+          "lo": 92.3,
+          "hi": 100.0
+        },
+        "neg_ci": {
+          "k": 19,
+          "n": 19,
+          "lo": 83.2,
+          "hi": 100.0
+        },
+        "positives": 46,
+        "negatives": 19,
+        "neg_refusal_min": 0.85,
+        "enough": true
+      },
+      "separation": {
+        "auc": 0.997,
+        "gap": -0.007,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      },
+      "separation_rerank": {
+        "auc": 1.0,
+        "gap": 0.597,
+        "positives": 46,
+        "negatives": 19,
+        "enough": true,
+        "refused": {
+          "positives": 0,
+          "negatives": 0
+        }
+      }
+    }
+  }
+}
