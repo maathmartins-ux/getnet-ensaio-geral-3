@@ -13,8 +13,8 @@ from .tools import *  # noqa: F403
 # --- portão "sem fonte, sem afirmação" ----------------------------------------------------------------------
 # BM25 bruto abaixo disso = sem fonte. O valor do desafio sai de `run_evals --calibrate-gate` e vai para o
 # challenge.py (ou COVERAGE_MIN_SCORE no compose). Trocar o padrão do KIT quebrou 14 testes.
-# run_evals --calibrate-gate (04/11/2026): responde 80% dos com fonte, recusa 85% dos sem fonte (n=46/20)
-MIN_SCORE = 7.396
+# run_evals --calibrate-gate (04/11/2026): responde 83% dos com fonte, recusa 90% dos sem fonte (n=46/19)
+MIN_SCORE = 7.939
 # Portão pela nota do cross-encoder (só com rerank): None = desligado. O valor do desafio sai de
 # `retrieval_eval` (rerank_gate: menor limiar que recusa >= 85% dos sem fonte) e vai para o challenge.
 # run_evals --calibrate-rerank-gate (04/11/2026): responde 100% dos com fonte, recusa 100% dos sem fonte (n=46/20)
