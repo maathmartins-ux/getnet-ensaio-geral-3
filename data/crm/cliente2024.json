@@ -1,0 +1,14 @@
+{
+  "owner": "cliente2024",
+  "name": "Padaria Central",
+  "credit_plan": "30_dias",
+  "terminals": [
+    {"terminal_id": "T2024A", "model": "Get Mini", "status": "online", "connection": "chip", "signal": "bom",
+     "last_contact_minutes_ago": 1}
+  ],
+  "transactions": [
+    {"transaction_id": "TX2001", "days_ago": 1, "time": "08:15", "method": "pix", "amount_cents": 3500, "status": "aprovada", "terminal_id": "T2024A"},
+    {"transaction_id": "TX2002", "days_ago": 1, "time": "12:30", "method": "credito", "amount_cents": 9900, "status": "aprovada", "terminal_id": "T2024A"},
+    {"transaction_id": "TX2003", "days_ago": 0, "time": "09:10", "method": "debito", "amount_cents": 2200, "status": "recusada", "decline_code": "51", "terminal_id": "T2024A"}
+  ]
+}

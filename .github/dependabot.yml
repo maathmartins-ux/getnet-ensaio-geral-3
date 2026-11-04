@@ -1,0 +1,14 @@
+# Atualizações propostas por PR: actions (lê a versão no comentário ao lado do SHA), imagem base por digest
+# (Dockerfile) e lockfiles do pip. Semanal: cabe na revisão sem virar ruído. A CI dos PRs dele roda só o
+# offline-tests (ci.yml): no repo novo ele abre vários PRs de uma vez e a CI completa de cada um enchia a fila.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: pip
+    directory: /
+    schedule: {interval: weekly}

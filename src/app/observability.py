@@ -1,0 +1,265 @@
+"""Logs JSON com trace_id, spans por etapa, métricas Prometheus e exportador OpenTelemetry opcional.
+
+- Sempre: cada `span()` vira uma linha JSON no log (com o trace_id do request) e uma latência em /metrics.
+- Com OTEL_EXPORTER=console|otlp e o extra [otel] instalado: o mesmo `span()` também abre um span
+  OpenTelemetry (atributo `app.trace_id` liga o span ao log). Sem o extra, segue só com o log —
+  nunca quebra a aplicação. O exportador fica fora da imagem padrão (requirements.lock).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+import uuid
+from bisect import bisect_left
+from collections import defaultdict
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
+
+from .config import CACHE_READ_PER_MTOK, CACHE_WRITE_FACTOR, PRICES_PER_MTOK, otel_exporter
+
+_trace_id: ContextVar[str] = ContextVar("trace_id", default="-")
+_usage: ContextVar[dict | None] = ContextVar("usage", default=None)
+# chamadas de modelo do request (orçamento por turno: supervisor.MAX_MODEL_CALLS); dict mutável para as threads
+_calls: ContextVar[dict | None] = ContextVar("model_calls", default=None)
+_usage_lock = threading.Lock()  # agentes em paralelo somam no mesmo dict do request
+# Versão das instruções usadas no request: {arquivo de prompt: hash curto do texto}: a resposta, o log e a linha do eval
+# dizem com QUAL prompt ela saiu.
+_prompts: ContextVar[dict | None] = ContextVar("prompt_versions", default=None)
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {"ts": round(record.created, 3), "level": record.levelname,
+                   "msg": record.getMessage(), "trace_id": _trace_id.get()}
+        payload.update(getattr(record, "extra_fields", {}))
+        return json.dumps(payload, ensure_ascii=False)
+
+
+log = logging.getLogger("app")
+if not log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(JsonFormatter())
+    log.addHandler(_h)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+# httpx loga a URL completa em INFO; a do Telegram carrega o token do bot.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def new_trace_id() -> str:
+    tid = uuid.uuid4().hex[:16]
+    _trace_id.set(tid)
+    _usage.set({"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
+    _calls.set({"n": 0})
+    _prompts.set({})
+    return tid
+
+
+def record_prompt(name: str, text: str) -> str:
+    """Anota o hash curto (sha256, 10 hex) do prompt `name` usado no request atual; devolve o hash."""
+    import hashlib
+
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+    used = _prompts.get()
+    if used is not None:
+        with _usage_lock:
+            used[name] = digest
+    return digest
+
+
+def prompt_versions() -> dict[str, str]:
+    return dict(sorted((_prompts.get() or {}).items()))
+
+
+def current_trace_id() -> str:
+    return _trace_id.get()
+
+
+def _esc(value: object) -> str:
+    # Formato de exposição Prometheus: rótulo com aspas, barra ou quebra de linha forjaria séries.
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+# Limites (ms) dos baldes do histograma de latência, fixos: o p95 sai do Prometheus (histogram_quantile) e a memória
+# não cresce com o tráfego. Um limite em cada valor que o kit compara: 8 s (alerta da média do agente), 15 s (escalada
+# do runbook), 20 s e 45 s (SLO por turno, evals/trace_stats.py), 60 s e 90 s (NODE_TIMEOUT_S do produto e do eval) e
+# 120 s (UPSTREAM_TIMEOUT_S do balanceador). No limite, "p95 > X" é exato (a interpolação só age dentro do balde).
+LATENCY_BUCKETS_MS = (10, 50, 100, 250, 500, 1000, 2500, 5000, 8000, 10000, 15000, 20000, 30000, 45000, 60000,
+                      90000, 120000)
+
+
+class _Histogram:
+    """Contagem por balde (o último é o +Inf), soma e total de uma etapa: tamanho fixo, qualquer que seja o tráfego."""
+
+    __slots__ = ("counts", "sum", "count")
+
+    def __init__(self) -> None:
+        self.counts = [0] * (len(LATENCY_BUCKETS_MS) + 1)
+        self.sum = 0.0
+        self.count = 0
+
+
+class Metrics:
+    def __init__(self) -> None:
+        self.counters: dict[tuple, float] = defaultdict(float)
+        # Antes era uma lista por etapa que só crescia, e cada scrape somava a lista inteira segurando a trava (o
+        # observe() das threads de request esperava). Agora: contadores fixos por etapa, render() O(etapas × baldes).
+        self.latency: dict[str, _Histogram] = defaultdict(_Histogram)
+        self._lock = threading.Lock()
+
+    def inc(self, name: str, **labels: str) -> None:
+        self.add(name, 1, **labels)
+
+    def add(self, name: str, value: float, **labels: str) -> None:
+        with self._lock:
+            self.counters[(name, tuple(sorted(labels.items())))] += value
+
+    def get(self, name: str, **labels: str) -> float:
+        return self.counters.get((name, tuple(sorted(labels.items()))), 0.0)
+
+    def observe(self, span: str, ms: float) -> None:
+        slot = bisect_left(LATENCY_BUCKETS_MS, ms)  # 1º limite ≥ ms (`le` é "até"); acima do último, o +Inf
+        with self._lock:
+            hist = self.latency[span]
+            hist.counts[slot] += 1
+            hist.sum += ms
+            hist.count += 1
+
+    def render(self) -> str:
+        lines = []
+        with self._lock:
+            for (name, labels), value in sorted(self.counters.items()):
+                lab = ",".join(f'{k}="{_esc(v)}"' for k, v in labels)
+                lines.append(f"{name}{{{lab}}} {value:g}")
+            if self.latency:
+                lines += ["# HELP span_latency_ms Latência por etapa (span) e do turno inteiro (span turn), em ms.",
+                          "# TYPE span_latency_ms histogram"]
+            for span, hist in sorted(self.latency.items()):
+                lab, total = _esc(span), 0
+                for le, n in zip((*LATENCY_BUCKETS_MS, "+Inf"), hist.counts, strict=True):
+                    total += n  # cumulativo: o balde `le` conta tudo até o limite, e o +Inf é o _count
+                    lines.append(f'span_latency_ms_bucket{{span="{lab}",le="{le}"}} {total}')
+                lines.append(f'span_latency_ms_sum{{span="{lab}"}} {hist.sum:.3f}')
+                lines.append(f'span_latency_ms_count{{span="{lab}"}} {hist.count}')
+        return "\n".join(lines) + "\n"
+
+
+METRICS = Metrics()
+
+# --- OpenTelemetry opcional ---------------------------------------------------------------------
+_otel = {"tracer": None, "provider": None, "exporter": None}
+
+
+def configure_otel(exporter: str | None = None, stream=None) -> bool:
+    """Liga o exportador OTel. `exporter` padrão = OTEL_EXPORTER. Devolve False se desligado ou sem o extra.
+
+    `stream` só vale para o console (testes capturam a saída). O provider global só é registrado uma
+    vez (regra do OTel); o tracer do app usa o provider próprio, então reconfigurar em teste funciona.
+    """
+    name = exporter or otel_exporter()
+    if not name:
+        _otel.update(tracer=None, provider=None, exporter=None)
+        return False
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
+    except ImportError:
+        log.warning("otel_unavailable", extra={"extra_fields": {"reason": "instale o extra [otel]"}})
+        return False
+    provider = TracerProvider(resource=Resource.create({"service.name": "app"}))
+    if name == "console":
+        exp = ConsoleSpanExporter(out=stream) if stream is not None else ConsoleSpanExporter()
+        provider.add_span_processor(SimpleSpanProcessor(exp))
+    else:
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        except ImportError:
+            log.warning("otel_unavailable", extra={"extra_fields": {"reason": "sem exportador OTLP"}})
+            return False
+        exp = OTLPSpanExporter()  # endpoint por OTEL_EXPORTER_OTLP_ENDPOINT (padrão do OTel)
+        provider.add_span_processor(BatchSpanProcessor(exp))
+    if not isinstance(trace.get_tracer_provider(), TracerProvider):
+        trace.set_tracer_provider(provider)  # SDK da Anthropic aninha os spans dele sob os nossos
+    _otel.update(tracer=provider.get_tracer("app"), provider=provider, exporter=name)
+    return True
+
+
+def otel_enabled() -> str | None:
+    return _otel["exporter"]
+
+
+@contextmanager
+def span(name: str, **fields):
+    start = time.perf_counter()
+    tracer = _otel["tracer"]
+    cm = tracer.start_as_current_span(name) if tracer else nullcontext()
+    with cm as otel_span:
+        if otel_span is not None:
+            otel_span.set_attribute("app.trace_id", _trace_id.get())
+            for k, v in fields.items():
+                otel_span.set_attribute(f"app.{k}", str(v))
+        try:
+            yield fields  # o chamador pode anexar o desfecho (ex.: status do agente) antes do log
+        finally:
+            ms = (time.perf_counter() - start) * 1000
+            METRICS.observe(name, ms)
+            if otel_span is not None:
+                for k, v in fields.items():
+                    otel_span.set_attribute(f"app.{k}", str(v))
+            log.info("span", extra={"extra_fields": {"span": name, "ms": round(ms, 2), **fields}})
+
+
+def llm_cost(model: str, input_tokens: int, output_tokens: int, cache_write: int = 0, cache_read: int = 0) -> float:
+    """US$ da chamada: entrada sem cache + escrita no cache (1,25× a entrada) + leitura do cache (preço do modelo) +
+    saída. Com cache, `input_tokens` da API já exclui o que foi lido ou escrito no cache: as três parcelas somam."""
+    price = PRICES_PER_MTOK.get(model)
+    if not price:
+        return 0.0
+    read = CACHE_READ_PER_MTOK.get(model, price[0] * 0.1)
+    return (input_tokens * price[0] + cache_write * price[0] * CACHE_WRITE_FACTOR + cache_read * read
+            + output_tokens * price[1]) / 1_000_000
+
+
+def record_llm_usage(model: str, input_tokens: int, output_tokens: int, cache_write: int = 0,
+                     cache_read: int = 0) -> float:
+    """Contabiliza tokens e custo da chamada no request atual, nas métricas e no log."""
+    price = PRICES_PER_MTOK.get(model)
+    cost = llm_cost(model, input_tokens, output_tokens, cache_write, cache_read)
+    METRICS.add("llm_tokens_total", input_tokens, model=model, kind="input")
+    METRICS.add("llm_tokens_total", output_tokens, model=model, kind="output")
+    if cache_write or cache_read:
+        METRICS.add("llm_tokens_total", cache_write, model=model, kind="cache_write")
+        METRICS.add("llm_tokens_total", cache_read, model=model, kind="cache_read")
+    METRICS.add("llm_cost_usd_total", cost, model=model)
+    if price is None:
+        METRICS.inc("llm_unpriced_calls_total", model=model)
+    usage, calls = _usage.get(), _calls.get()
+    if calls is not None:
+        with _usage_lock:
+            calls["n"] += 1
+    if usage is not None:
+        with _usage_lock:
+            usage["input_tokens"] += input_tokens
+            usage["output_tokens"] += output_tokens
+            if cache_read or cache_write:  # só quando houve cache: o formato antigo do resumo não muda
+                usage["cache_read_tokens"] = usage.get("cache_read_tokens", 0) + cache_read
+                usage["cache_write_tokens"] = usage.get("cache_write_tokens", 0) + cache_write
+            usage["cost_usd"] = round(usage["cost_usd"] + cost, 6)
+    log.info("llm_usage", extra={"extra_fields": {"model": model, "input_tokens": input_tokens,
+                                                  "output_tokens": output_tokens, "cache_read_tokens": cache_read,
+                                                  "cache_write_tokens": cache_write, "cost_usd": round(cost, 6)}})
+    return cost
+
+
+def request_model_calls() -> int:
+    """Chamadas de modelo feitas no request atual (todas as threads do turno)."""
+    calls = _calls.get()
+    return calls["n"] if calls else 0
+
+
+def request_usage() -> dict:
+    return dict(_usage.get() or {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})

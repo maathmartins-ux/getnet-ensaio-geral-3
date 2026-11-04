@@ -1,0 +1,31 @@
+# Duas réplicas da api atrás de um balanceador, com o MESMO banco (volume compartilhado, SQLite em WAL).
+# Prova (scripts/scale_smoke.py, `make scale`): a conversa continua de uma réplica para a outra e a mesma conversa
+# nunca abre dois casos de atendimento. Limite declarado: réplicas no MESMO host (o SQLite não é rede); em vários
+# hosts, Postgres atrás de `Store` (ADR 0002).
+services:
+  api:
+    image: ${SCALE_IMAGE:-app-scale}  # construída pelo scripts/scale_smoke.py (na nuvem, com o proxy do build)
+    environment:
+      AUTH_MODE: required
+      # Nenhum segredo no arquivo: o scripts/scale_smoke.py gera um aleatório a cada execução e o passa às 2 réplicas
+      # (e ao token do teste) por SCALE_AUTH_SECRET; sem a variável o compose recusa subir, em vez de usar um padrão.
+      # Prova: tests/test_no_literal_secrets.py::test_no_compose_file_ships_a_literal_secret
+      AUTH_SECRET: ${SCALE_AUTH_SECRET:?defina SCALE_AUTH_SECRET (o scripts/scale_smoke.py gera um a cada execução)}
+      RATE_LIMIT_PER_MIN: "1000"
+      SLA_CHECK_SECONDS: "0"
+    volumes:
+      - appdata:/app/var
+    deploy:
+      replicas: 2
+  lb:
+    # balanceador em Python na própria imagem do app (ops/lb.py): nenhuma imagem externa para baixar
+    image: ${SCALE_IMAGE:-app-scale}
+    command: ["python", "/opt/lb.py"]
+    volumes:
+      - ./ops/lb.py:/opt/lb.py:ro
+    ports:
+      - "${SCALE_PORT:-8080}:8080"
+    depends_on:
+      - api
+volumes:
+  appdata:
