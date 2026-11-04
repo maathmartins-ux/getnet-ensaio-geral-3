@@ -1,7 +1,7 @@
 {
   "_doc": "gerado por `python -m evals.run_evals --choose-retriever --apply`; não edite à mão",
-  "chosen_at": "2026-11-04T20:36:50+00:00",
-  "git_sha": "6e72c7a",
+  "chosen_at": "2026-11-04T20:48:58+00:00",
+  "git_sha": "8b33fcf",
   "gold": "retrieval.jsonl",
   "criterion": "padrão do kit (KIT_RETRIEVER em src/app/config.py), medido no relógio com --keep-default: a latência medida com a máquina carregada (eval, fumaça e autores ao mesmo tempo) não troca o buscador no meio da entrega; o portão é o calibrado nesta medida",
   "latency_budget_ms": 1500.0,
@@ -120,11 +120,11 @@
         }
       },
       "latency_ms": {
-        "p50": 73.2,
-        "p95": 223.7,
-        "mean": 89.8
+        "p50": 61.6,
+        "p95": 89.1,
+        "mean": 64.9
       },
-      "memory_mb": 1541.7,
+      "memory_mb": 1542.9,
       "dedupe_aliases": 23,
       "fallback": "",
       "config": {
@@ -192,11 +192,11 @@
         }
       },
       "latency_ms": {
-        "p50": 67.1,
-        "p95": 87.6,
-        "mean": 67.6
+        "p50": 61.8,
+        "p95": 73.9,
+        "mean": 62.5
       },
-      "memory_mb": 1541.7,
+      "memory_mb": 1542.9,
       "dedupe_aliases": 23,
       "fallback": "",
       "config": {
@@ -265,11 +265,11 @@
         }
       },
       "latency_ms": {
-        "p50": 933.0,
-        "p95": 1081.2,
-        "mean": 942.0
+        "p50": 939.0,
+        "p95": 1103.1,
+        "mean": 949.8
       },
-      "memory_mb": 2378.2,
+      "memory_mb": 2381.8,
       "dedupe_aliases": 23,
       "fallback": "",
       "config": {
@@ -373,11 +373,11 @@
         }
       },
       "latency_ms": {
-        "p50": 922.7,
-        "p95": 1150.5,
-        "mean": 947.7
+        "p50": 958.5,
+        "p95": 1122.8,
+        "mean": 957.8
       },
-      "memory_mb": 2378.2,
+      "memory_mb": 2381.8,
       "dedupe_aliases": 23,
       "fallback": "",
       "config": {
