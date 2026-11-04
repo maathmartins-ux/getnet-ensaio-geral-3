@@ -1,0 +1,22 @@
+{"text": "Como funciona o aluguel da maquininha?", "intent": "knowledge"}
+{"text": "Quais bandeiras de cartão a Get Mini aceita?", "intent": "knowledge"}
+{"text": "Is there a monthly fee for the Get Smart?", "intent": "knowledge"}
+{"text": "Qual o prazo padrão do crédito à vista?", "intent": "knowledge"}
+{"text": "Can I issue a payment link without a website?", "intent": "knowledge"}
+{"text": "O Pix da maquininha tem tarifa?", "intent": "knowledge"}
+{"text": "Quanto recebi de vendas no débito nesta semana?", "intent": "support"}
+{"text": "Show me last week's card sales total", "intent": "support"}
+{"text": "Qual terminal meu está ligado agora?", "intent": "support"}
+{"text": "List my receivables for the next days", "intent": "support"}
+{"text": "A tela da maquininha travou e não sai", "intent": "troubleshoot"}
+{"text": "The terminal keeps showing a communication failure", "intent": "troubleshoot"}
+{"text": "Cartão do cliente não passa de jeito nenhum", "intent": "troubleshoot"}
+{"text": "My POS keeps rebooting by itself", "intent": "troubleshoot"}
+{"text": "Como vai estar o tempo em Recife no sábado?", "intent": "general"}
+{"text": "Sterling to BRL conversion today, please", "intent": "general"}
+{"text": "Quero conversar com uma pessoa da equipe", "intent": "human_request"}
+{"text": "Connect me with someone from support staff", "intent": "human_request"}
+{"text": "O leitor de cartão parou: em qual aparelho foi e como eu destravo?", "intent": "troubleshoot"}
+{"text": "List the failed payments and tell me how to sort them out", "intent": "troubleshoot"}
+{"text": "Registre um chamado, o leitor parou de ler cartão", "intent": "support"}
+{"text": "Log a repair request for my POS, the screen went black", "intent": "support"}

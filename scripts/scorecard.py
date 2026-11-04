@@ -1,0 +1,336 @@
+"""Placar honesto: cada número que importa, ao lado da sua referência externa, os ruins junto com os bons.
+
+Sem ícone de "falhou" e sem meta própria: o que fica abaixo aparece com a palavra "abaixo da referência" e a causa
+vai na seção de limites do README, com o mecanismo e o número (um ❌ diz que falhou, mas não diz por quê).
+
+1ª linha = oficiais resolvidas (sem humano E todo `expect.facts` na resposta E fonte citada, contrato da SPEC, E o juiz
+diz fundamentada quando julgou a linha; sem juiz o rótulo diz "só lexical"), e
+"helpful" do juiz ao lado de "grounded": fundamentada sozinha aprova a resposta que só passa para um humano.
+
+Uso: python scripts/scorecard.py            (imprime a tabela; o README a recebe pelo bloco `scorecard`)
+
+Lê só o que está commitado em evals/results/ (offline, ao vivo por split, juiz, rótulos humanos). Métrica sem
+arquivo sai "não medido", nunca some: quem lê vê o buraco. As referências são fixas e vêm de fora do código
+(qualidade semântica: groundedness ≥ 90% nos cenários oficiais; busca: Recall@3 ≥ 0,85 e MRR ≥ 0,80; memória:
+pass@1 ≥ 85%; avaliação independente: 2 rotuladores e held-out com ≥ 80 casos).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS = ROOT / "evals" / "results"
+if str(ROOT) not in sys.path:  # rodado como script (python scripts/scorecard.py): o pacote evals vem da raiz
+    sys.path.insert(0, str(ROOT))
+
+
+@dataclass(frozen=True)
+class Target:
+    key: str
+    label: str
+    goal: float
+    unit: str  # "%" (0–100), "frac" (0–1), "n" (contagem) ou "usd"
+    where: str  # arquivo e campo de onde o número vem
+    diagnostic: bool = False  # mostrado, sem status de meta: explica outro número, não é a medida
+
+
+TARGETS = (
+    # manchete (1ª linha): resposta certa, não só fundamentada. "Fundamentada" sozinha conta "passei para um humano"
+    # como acerto (medido: fundamentadas 1,00 com helpful 0,733 do mesmo juiz).
+    Target("official_resolved", "Oficiais resolvidas (sem humano + todo fato + fonte)", 0.90, "frac",
+           "live_official.json resolved + judge.json"),
+    Target("official_resolved_k", "Oficiais resolvidas: pass^k (todas as rodadas)", 0.90, "frac",
+           "live_official.json resolved + judge.json"),
+    # a resposta parcial (um passo `partial`: "as fontes não trazem o passo a passo") é honesta, mas não resolve a
+    # pergunta inteira: fica fora da manchete e aparece aqui, ao lado dela (ensaio: 15 de 30 parciais com 1,00 na
+    # manchete)
+    Target("official_partial", "Oficiais resolvidas só em parte (resposta parcial; fora da manchete)", 0.0, "frac",
+           "live_official.json resolved.partial", diagnostic=True),
+    Target("official_helpful", "Juiz: respostas oficiais úteis (helpful)", 0.90, "frac",
+           "judge.json by_split.official"),
+    Target("official_grounded", "Juiz: respostas oficiais fundamentadas", 0.90, "frac", "judge.json by_split.official"),
+    Target("official_numbers", "Oficiais: números com base na evidência", 95.0, "%", "live_official.json numbers_acc"),
+    Target("official_pass_k", "Oficiais: pass^k (todas as rodadas passam)", 0.90, "frac", "live_official.json"),
+    Target("memory_pass_1", "Memória ao vivo: pass@1", 0.85, "frac", "live_memory.json stability"),
+    Target("memory_numbers", "Memória ao vivo: números com base", 95.0, "%", "live_memory.json numbers_acc"),
+    # humano no laço medido, não só testado: a operadora simulada (evals/operator_sim.py) responde dentro da espera
+    # e a resposta dela tem de sair no mesmo turno; os casos atrasados (retomada, uma vez só) ficam no bloco do split
+    Target("hitl_in_turn", "Humano no laço: resposta do operador no mesmo turno (split hitl)", 0.90, "frac",
+           "live_hitl.json human_in_turn"),
+    Target("recall3", "Busca: Recall@3", 0.85, "frac", "latest.json retrieval"),
+    Target("mrr", "Busca: MRR", 0.80, "frac", "latest.json retrieval"),
+    # o redator lê os 5 primeiros (faq_top_k): cobertura que importa para a resposta
+    Target("recall5", "Busca: Recall@5 (o que o redator lê)", 0.90, "frac", "latest.json retrieval", diagnostic=True),
+    Target("heldout_cases", "Held-out cego: casos", 80, "n", "latest.json metrics.heldout"),
+    # ponta a ponta: o humano diz se a resposta serve; a intenção (taxonomia) é diagnóstico
+    Target("heldout_e2e", "Held-out cego: ponta a ponta (humano passa)", 0.80, "frac", "human_review.json heldout"),
+    Target("heldout_intent", "Held-out cego: intenção (diagnóstico)", 85.0, "%", "latest.json metrics.heldout",
+           diagnostic=True),
+    Target("raters", "Rotuladores humanos independentes", 2, "n", "human_review.json"),
+    # o gabarito de calibração é escrito pela frente Q (agente), não por pessoas: chamá-lo de "humano" mostraria
+    # "juiz × humano kappa 1,00" sem humano nenhum. Concordância com pessoas é o juiz_x_humano do label.py.
+    Target("judge_kappa", "Juiz × gabarito de calibração (rótulos da SPEC, não humanos): kappa", 0.80, "frac",
+           "judge.json calibration"),
+    # regra fixada antes de medir: 1 = validado (>= 10 por classe, TPR e TNR >= 0,8); 0 = só regressão
+    Target("judge_validated", "Juiz validado contra rótulos de pessoas (1 = sim, regra fixada antes)", 1, "n",
+           "judge.json calibration.validation"),
+    # custo de operação medido, não suposto: gasto total ao vivo ÷ turnos resolvidos sem humano (todos os splits
+    # completos), e a fração resolvida (o README mostra o "custo por turno resolvido")
+    Target("cost_per_resolved", "Custo por turno resolvido sem humano (ao vivo)", 0.05, "usd",
+           "live_*.json spent_usd ÷ linhas sem handoff", diagnostic=True),
+    Target("resolved_fraction", "Turnos resolvidos sem humano (ao vivo, todos os splits)", 0.80, "frac",
+           "live_*.json linhas sem handoff (juiz: fundamentada)", diagnostic=True),
+)
+
+
+def _load(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _complete(report: dict | None) -> dict | None:
+    """Rodada degradada ou abortada não conta como medida (fica no arquivo `.degraded.json` à parte)."""
+    return report if report and report.get("status") in (None, "complete", "ran") else None
+
+
+def _judge_of(source: str, report: dict, judge: dict | None) -> dict | None:
+    """Vereditos do juiz confiável para as linhas de `report` (evals.run_evals.judge_verdicts); None = sem juiz."""
+    from evals.run_evals import judge_verdicts
+
+    return judge_verdicts(judge, source, report.get("rows") or [])
+
+
+def official_resolved(report: dict, judge: dict | None = None) -> tuple[float | None, float | None]:
+    """(taxa por execução, pass^k) das oficiais resolvidas, contadas das linhas (checagem `resolved`) com o juiz:
+    linha julgada só é resolvida se o juiz também a diz fundamentada (`judge`: o judge.json; sem ele, ou juiz não
+    confiável, a conta é só lexical, como o bloco `resolved`). Relatório sem linhas: o bloco `resolved` gravado; sem
+    nenhuma linha com a checagem (caso sem expect.facts) = não medido."""
+    from evals.run_evals import resolved_summary
+
+    if report.get("rows"):
+        s = resolved_summary(report["rows"], _judge_of("live_official.json", report, judge))["by_split"].get("official")
+        if s:
+            return s.get("rate"), s.get("pass_hat_k")
+        return None, None
+    s = ((report.get("resolved") or {}).get("by_split") or {}).get("official")
+    if s:
+        return s.get("rate"), s.get("pass_hat_k")
+    return None, None
+
+
+def official_partial(report: dict, judge: dict | None = None) -> float | None:
+    """Fração das execuções oficiais resolvidas só em parte (evals.run_evals.partial_answer), a mesma conta da
+    manchete (com o juiz quando ele julgou a linha). None = não medido."""
+    from evals.run_evals import resolved_summary
+
+    if report.get("rows"):
+        s = resolved_summary(report["rows"], _judge_of("live_official.json", report, judge))["by_split"].get("official")
+    else:
+        s = ((report.get("resolved") or {}).get("by_split") or {}).get("official")
+    part = (s or {}).get("partial")
+    return part.get("rate") if part else None
+
+
+def resolved_basis(report: dict, judge: dict | None) -> str:
+    """"regex+juiz" quando a manchete das oficiais usou vereditos do juiz; "lexical" quando só a regex contou."""
+    return "regex+juiz" if report.get("rows") and _judge_of("live_official.json", report, judge) else "lexical"
+
+
+def hitl_in_turn(report: dict) -> float | None:
+    """Fração dos casos do split `hitl` que esperam a resposta no turno (`expect.human_in_turn` verdadeiro: a
+    operadora responde dentro da espera) em que ela saiu no MESMO turno (checagem `human_in_turn`; caso que quebrou
+    conta como não). None = split não medido."""
+    rows = [r for r in report.get("rows") or [] if r.get("split") == "hitl" and r.get("expected_human_in_turn")]
+    if not rows:
+        return None
+    return round(sum(1 for r in rows if not r.get("crash") and (r.get("checks") or {}).get("human_in_turn"))
+                 / len(rows), 4)
+
+
+def cost_per_resolved(results: Path = RESULTS) -> tuple[float | None, float | None]:
+    """(US$ por turno resolvido sem humano, fração resolvida) sobre todos os live_*.json completos.
+
+    Resolvido = a linha respondeu, não pediu humano, não quebrou e, se o juiz (confiável) a julgou, ele a diz
+    fundamentada: resposta que o juiz reprova não é atendimento resolvido. O denominador do custo é o que o negócio
+    compra (atendimento que não precisou de gente); o gasto inclui os turnos que escalaram e os de histórico."""
+    judge = _load(results / "judge.json")
+    spent, resolved, total = 0.0, 0, 0
+    for path in sorted(results.glob("live_*.json")):
+        rep = _complete(_load(path))
+        if not rep or path.name.count(".") > 1:  # live_x.aborted_max_usd.json e afins ficam fora
+            continue
+        rows = rep.get("rows") or []
+        verdicts = _judge_of(path.name, rep, judge) or {}
+        spent += float(rep.get("spent_usd") or 0.0)
+        total += len(rows)
+        resolved += sum(1 for r in rows if r.get("answer") and not r.get("handoff_required") and not r.get("crash")
+                        and (verdicts.get((r.get("id"), r.get("run", 0))) or {}).get("grounded", True) is True)
+    if not total:
+        return None, None
+    return (round(spent / resolved, 5) if resolved else None), round(resolved / total, 4)
+
+
+def measure(results: Path = RESULTS) -> dict[str, float | None]:
+    latest = _load(results / "latest.json") or {}
+    official = _complete(_load(results / "live_official.json")) or {}
+    memory = _complete(_load(results / "live_memory.json")) or {}
+    hitl = _complete(_load(results / "live_hitl.json")) or {}
+    judge = _load(results / "judge.json") or {}
+    human = _load(results / "human_review.json") or {}
+    ret = latest.get("retrieval") or {}
+    held = (latest.get("metrics") or {}).get("heldout") or {}
+    jo = (judge.get("by_split") or {}).get("official") or {}
+    om = (official.get("metrics") or {}).get("official") or {}
+    mm = (memory.get("metrics") or {}).get("memory") or {}
+    resolved, resolved_k = official_resolved(official, judge)
+    partial = official_partial(official, judge)
+    per_resolved, resolved_frac = cost_per_resolved(results)
+    trusted = not judge.get("judge_unreliable")
+    return {
+        "official_resolved": resolved,
+        "official_resolved_k": resolved_k,
+        "official_partial": partial,
+        "official_helpful": jo.get("helpful_rate") if trusted else None,
+        "official_grounded": jo.get("grounded_rate") if trusted else None,
+        "official_numbers": om.get("numbers_acc"),
+        "official_pass_k": (official.get("stability") or {}).get("pass_hat_k"),
+        "memory_pass_1": (memory.get("stability") or {}).get("pass_at_1"),
+        "memory_numbers": mm.get("numbers_acc"),
+        "hitl_in_turn": hitl_in_turn(hitl),
+        "recall3": ret.get("recall@3"),
+        "mrr": ret.get("mrr"),
+        "recall5": ret.get("recall@5"),
+        "heldout_cases": held.get("cases"),
+        "heldout_e2e": (human.get("heldout") or {}).get("taxa"),
+        "heldout_intent": held.get("intent_acc"),
+        "raters": human.get("rotuladores") or (1 if human.get("rotulos") else None),
+        "judge_kappa": (judge.get("calibration") or {}).get("cohen_kappa"),
+        # só vale com rótulo de pessoa: relatório sem labels_origin (antigo) conta como rótulo da SPEC
+        "judge_validated": (None if not (judge.get("calibration") or {}).get("validation") else
+                            float(judge["calibration"]["validation"]["validated"]
+                                  and judge["calibration"].get("labels_origin") == "human")),
+        "cost_per_resolved": per_resolved,
+        "resolved_fraction": resolved_frac,
+    }
+
+
+def _fmt(value: float | None, unit: str) -> str:
+    if value is None:
+        return "não medido"
+    if unit == "%":
+        return f"{value:.1f}%"
+    if unit == "n":
+        return f"{value:.0f}"
+    if unit == "usd":
+        return f"US$ {value:.4f}"
+    return f"{value:.2f}"
+
+
+# A manchete diz a base da conta: com juiz, resolvida exige também "fundamentada" na linha julgada; sem juiz (ou juiz
+# não confiável), só a regex de fato contou e o rótulo diz isso.
+BASIS_LABEL = {
+    "regex+juiz": {"official_resolved": "Oficiais resolvidas por completo (sem humano + todo fato + fonte + juiz: "
+                                        "fundamentada; parcial fora)",
+                   "official_resolved_k": "Oficiais resolvidas: pass^k (todas as rodadas, com o juiz)"},
+    "lexical": {"official_resolved": "Oficiais resolvidas por completo (sem humano + todo fato + fonte; parcial fora; "
+                                     "só lexical, sem juiz)",
+                "official_resolved_k": "Oficiais resolvidas: pass^k (todas as rodadas; só lexical, sem juiz)"},
+}
+BASIS_HOW = {
+    "regex+juiz": "resposta sem humano, com todo fato de referência do cenário, com fonte, que o juiz diz "
+                  "fundamentada e sem passo parcial (os 10 do enunciado; a regex sozinha não basta)",
+    "lexical": "só lexical (sem juiz): resposta sem humano, com todo fato de referência do cenário (regex), com fonte "
+               "e sem passo parcial (os 10 do enunciado)",
+}
+
+
+def basis(results: Path = RESULTS) -> str:
+    """Base da manchete de resolvidas nas medidas commitadas: "regex+juiz" ou "lexical" (resolved_basis)."""
+    return resolved_basis(_complete(_load(results / "live_official.json")) or {}, _load(results / "judge.json"))
+
+
+def rows(results: Path = RESULTS) -> list[dict]:
+    got = measure(results)
+    labels = BASIS_LABEL[basis(results)]
+    out = []
+    for t in TARGETS:
+        v = got.get(t.key)
+        status = "não medido" if v is None else ("atinge" if v >= t.goal else "abaixo")
+        if t.diagnostic and v is not None:
+            status = "diagnóstico"
+        out.append({"key": t.key, "label": labels.get(t.key, t.label), "value": v, "shown": _fmt(v, t.unit),
+                    "goal": "—" if t.diagnostic else _fmt(t.goal, t.unit), "status": status, "where": t.where})
+    return out
+
+
+ICON = {"atinge": "na referência", "abaixo": "abaixo da referência (causa nos limites)", "não medido": "não medido",
+        "diagnóstico": "diagnóstico"}
+
+
+def to_markdown(results: Path = RESULTS) -> str:
+    table = rows(results)
+    lines = ["| métrica | valor | referência da avaliação | situação | de onde vem |", "|---|---:|---:|---|---|"]
+    lines += [f"| {r['label']} | {r['shown']} | {r['goal']} | {ICON[r['status']]} | `{r['where']}` |" for r in table]
+    weak = [r for r in table if r["status"] not in ("atinge", "diagnóstico")]
+    if weak:
+        lines += ["", f"**Abaixo da referência ou sem medida ({len(weak)} de {len(table)}), com a causa nos limites:** "
+                  + "; ".join(f"{r['label']} ({r['shown']})" for r in weak) + "."]
+    else:
+        lines += ["", f"Todas as {len(table)} referências atingidas nas medidas commitadas."]
+    return "\n".join(lines)
+
+
+# O README mostra só as medidas que o enunciado pede (resposta certa nos cenários, busca, memória) e o KPI do negócio
+# (fração resolvida sem humano e o custo de cada uma), com valor e de onde vem — sem meta própria, sem status "abaixo"
+# e sem repetir tabelas com intervalo de confiança. As tabelas completas seguem em docs/RESULTS.md e as limitações, em
+# prosa no README (efeito + o que faltaria). Rodada 10: o README prometia "custo por turno resolvido (§0)" e o §0 não
+# o trazia; as duas são diagnósticas (sem meta), então a mensagem de entrega não as lista como abaixo.
+HEADLINE = ("official_resolved", "official_resolved_k", "official_partial", "official_grounded", "official_helpful",
+            "memory_pass_1", "hitl_in_turn", "recall3", "mrr", "resolved_fraction", "cost_per_resolved")
+HOW = {
+    "official_resolved": "resposta sem humano, com todo fato de referência do cenário e com fonte (os 10 do enunciado)",
+    "official_resolved_k": "o mesmo, em todas as rodadas de cada cenário",
+    "official_partial": "resolvida sem humano, mas com um passo parcial (a resposta diz o que a fonte não cobre): "
+                        "honesta, fora da manchete; somada a ela dá a fração com resposta útil em parte",
+    "official_grounded": "juiz LLM com o texto das fontes: cada afirmação apoiada nelas",
+    "official_helpful": "juiz LLM: a resposta resolve o que o lojista perguntou",
+    "memory_pass_1": "conversas de vários turnos: o fato do turno anterior chega à resposta",
+    "hitl_in_turn": "operadora simulada responde o caso aberto no turno dentro da espera: a resposta dela e os passos "
+                    "pendentes saem no mesmo turno (a que chega depois vai pela retomada, uma vez só)",
+    "recall3": "perguntas rotuladas olhando a fonte: a página certa entre as 3 primeiras",
+    "mrr": "posição média da primeira página certa (1 = sempre em primeiro)",
+    "resolved_fraction": "todas as execuções ao vivo, de todos os splits: resposta sem pedir humano, sem erro e, se "
+                         "julgada, fundamentada pelo juiz (recusa do guardrail conta; o fato se confere só nas "
+                         "oficiais resolvidas)",
+    # logo depois da fração em HEADLINE: o denominador do custo é a contagem da linha de cima
+    "cost_per_resolved": "gasto ao vivo de todos os splits (inclusive turnos que foram ao humano e turnos anteriores "
+                         "das conversas) ÷ as execuções resolvidas da linha acima",
+}
+
+
+def headline_markdown(results: Path = RESULTS) -> str:
+    table = {r["key"]: r for r in rows(results)}
+    how = {**HOW, "official_resolved": BASIS_HOW[basis(results)]}
+    lines = ["| medida | valor | como se mede |", "|---|---:|---|"]
+    lines += [f"| {table[k]['label']} | {table[k]['shown']} | {how[k]} |" for k in HEADLINE
+              if table.get(k) and table[k]["value"] is not None]
+    missing = [table[k]["label"] for k in HEADLINE if table.get(k) and table[k]["value"] is None]
+    if missing:
+        lines += ["", "Não medido nesta entrega: " + "; ".join(missing) + "."]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8")
+    print(to_markdown(Path(sys.argv[1]) if len(sys.argv) > 1 else RESULTS))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

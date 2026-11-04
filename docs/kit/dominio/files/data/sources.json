@@ -1,0 +1,41 @@
+{
+  "_doc": "Páginas do site oficial da Getnet Brasil para `python -m app.ingest` (frente K). allowed_hosts = só o domínio do país do enunciado.",
+  "allowed_hosts": [
+    "site.getnet.com.br"
+  ],
+  "groups": {
+    "produtos": {
+      "prefix": "prod",
+      "pages": {
+        "get-smart": "https://site.getnet.com.br/maquininha/get-smart/",
+        "get-classica": "https://site.getnet.com.br/maquininha/get-classica/",
+        "pix": "https://site.getnet.com.br/pix/",
+        "crediario": "https://site.getnet.com.br/crediario/",
+        "link-de-pagamento": "https://site.getnet.com.br/link-de-pagamento/",
+        "conta-digital": "https://site.getnet.com.br/conta-digital/",
+        "todas-maquininhas": "https://site.getnet.com.br/todas-as-maquininhas/",
+        "taxas": "https://site.getnet.com.br/taxas/",
+        "get-tap": "https://site.getnet.com.br/get-tap/"
+      }
+    },
+    "suporte": {
+      "prefix": "sup",
+      "pages": {
+        "duvidas": "https://site.getnet.com.br/duvidas/",
+        "antecipacao-de-vendas": "https://site.getnet.com.br/duvidas/antecipacao-de-vendas/",
+        "crediario": "https://site.getnet.com.br/duvidas/crediario/",
+        "get-conta": "https://site.getnet.com.br/duvidas/get-conta/",
+        "get-smart": "https://site.getnet.com.br/duvidas/get-smart/",
+        "link-de-pagamento": "https://site.getnet.com.br/duvidas/link-de-pagamento/",
+        "operacional": "https://site.getnet.com.br/duvidas/operacional/",
+        "pix": "https://site.getnet.com.br/duvidas/pix/",
+        "pix-mais-respostas": "https://site.getnet.com.br/duvidas/pix-mais-respostas/",
+        "taxas": "https://site.getnet.com.br/duvidas/taxas/",
+        "parcelado": "https://site.getnet.com.br/duvidas/parcelado/",
+        "erro-adq-1-84": "https://site.getnet.com.br/get-ajuda-erros-maquininha/erro-adq-1-84/",
+        "erro-adq-1-19": "https://site.getnet.com.br/get-ajuda-erros-maquininha/erro-adq-1-19/",
+        "erro-adq-1-87": "https://site.getnet.com.br/get-ajuda-erros-maquininha/erro-adq-1-87/"
+      }
+    }
+  }
+}

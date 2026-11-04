@@ -1,0 +1,804 @@
+"""Orquestração de um turno: guardrails → memória → router → supervisor → saída segura → persistência.
+
+Os forks trocam agentes e regras do router; a assinatura de `handle` (ChatRequest, user_id
+autenticado, identity_verified -> ChatResponse) não muda.
+
+Latência: com LLM, o classificador de segurança (camada 2) e o router rodam em paralelo sobre o texto
+já mascarado; se o guardrail bloquear, a decisão do router é descartada.
+"""
+from __future__ import annotations
+
+import contextvars
+import re
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+
+from . import agents, capabilities, cases, casestate, claims, domain, grounding, memory, router, supervisor
+from .agents import Context, escalation_agent
+from .grounding import risk_flags, unsupported_numbers
+from .guardrails import PII_ECHO, UNAVAILABLE, Verdict, llm_check, mask_output, pii_echo_reply, pre_check
+from .llm import force_offline, get_llm
+from .observability import METRICS, log, new_trace_id, prompt_versions, request_usage, span
+from .rag import get_index
+from .router import detect_language, route
+from .schemas import ChatRequest, ChatResponse, Handoff, RouterDecision, Usage
+from .store import get_store
+
+REFUSAL = {
+    "pt": "Não posso atender a esse pedido. Posso ajudar com dúvidas sobre o produto ou sua conta.",
+    "en": "I can't help with that request. I can help with product or account questions.",
+}
+# Autoagressão não recebe a recusa seca: recebe apoio e o CVV (188, 24 h, gratuito, no Brasil). Texto fixo, sem LLM.
+SELF_HARM_SUPPORT = {
+    "pt": "Sinto muito que você esteja passando por isso. Você não precisa enfrentar sozinho: o CVV atende "
+          "24 horas, de graça, pelo telefone 188 ou em cvv.org.br. Se houver risco imediato, ligue 192 (SAMU).",
+    "en": "I'm sorry you're going through this. You don't have to face it alone: in Brazil, CVV answers 24/7, free, "
+          "at 188 (cvv.org.br). If you are in immediate danger, call 192 (SAMU) or your local emergency number.",
+}
+NO_ANSWER = {
+    "pt": "Não encontrei base para responder com segurança. Posso encaminhar para um atendente humano.",
+    "en": "I couldn't find a reliable basis to answer. I can hand this to a human agent.",
+}
+HISTORY_WINDOW = 20  # mensagens recentes inteiras no contexto (10 turnos)
+DIGEST_ITEMS = 8  # falas antigas resumidas além da janela
+# O roteador recebe a conversa INTEIRA: o assunto do turno 1 decide "e ele já saiu?" no turno 14 (medido: com só
+# 20 mensagens, o 1º turno de uma conversa de 26 sumia). Fora da janela, só falas do cliente, cortadas e com teto.
+ROUTER_OLDER_CHARS = 120
+ROUTER_OLDER_MAX = 200  # 200 x 120 caracteres: teto de memória; o prompt do LLM usa só intenções e as 4 últimas
+
+
+def _router_history(store, conversation_id: str, history: list[dict]) -> list[dict]:
+    older = [{"role": "user", "content": m["content"][:ROUTER_OLDER_CHARS], "intent": m["intent"]}
+             for m in store.older_messages(conversation_id, skip_last=HISTORY_WINDOW) if m["role"] == "user"]
+    return older[-ROUTER_OLDER_MAX:] + history
+
+
+def _update_summary(store, user_id: str, conversation_id: str, ledger: memory.Ledger, handoff: Handoff) -> None:
+    """Memória de longo prazo, entre conversas: o perfil do usuário (app/memory.py) recebe, com a conversa de origem e
+    a data, o que o livro desta conversa já extraiu por código (registros citados, produto, assunto) e o protocolo
+    aberto no turno. Determinística de propósito: auditável, sem custo e sem PII (o livro só tem texto mascarado).
+    """
+    protocol = (handoff.ticket_id, handoff.reason or "") if handoff.required and handoff.ticket_id else None
+    memory.remember_turn(store, user_id, ledger, conversation_id=conversation_id, protocol=protocol)
+
+
+def _user_memory(store, user_id: str, conversation_id: str) -> tuple[str, str, memory.Profile]:
+    """(perfil para o contexto dos agentes, perfil para a evidência do turno, o perfil); ("", "", vazio) quando não há.
+
+    Só o que veio de OUTRAS conversas do usuário (o desta já está no livro e no histórico), datado e numa moldura de
+    dado. O protocolo sai com a situação lida agora no banco. A versão da evidência (checagem numérica, frases e juiz)
+    vai sem as datas: a data de uma conversa antiga viraria base de qualquer "3 dias" ou "dia 11" da resposta.
+    """
+    profile = memory.load_profile(store, user_id)
+    status = {}
+    for p in profile.of("protocol"):
+        ticket = store.get_ticket(p["v"]) if p["conv"] != conversation_id else None
+        if ticket and ticket.get("user_id") == user_id:
+            status[p["v"]] = ticket["status"]
+    shown = profile.render(exclude=conversation_id, status=status)
+    if shown:
+        METRICS.inc("user_memory_used_total")  # turnos que receberam memória de outra conversa
+    return shown, profile.render(exclude=conversation_id, status=status, dated=False), profile
+
+
+def recalled_query(profile: memory.Profile, text: str, conversation_id: str) -> str | None:
+    """Assunto da conversa anterior que vira consulta da busca quando a fala retoma outra conversa ("da última vez",
+    "last time"). Sem perfil de outra conversa, None."""
+    if not memory.refers_back(text):
+        return None
+    topics = memory.recalled_topics(profile, exclude=conversation_id)
+    return topics[0] if topics else None
+
+
+# Nome interno de agente vira palavras, com o artigo e a contração da frase: "do faq_agent" → "da base de
+# conhecimento" (trocar só o nome dava "do a base de conhecimento").
+_INTERNAL_NAMES = {"faq_agent": ("a", "base de conhecimento", "the knowledge base"),
+                   "records_agent": ("os", "dados da sua conta", "your account data"),
+                   "escalation_agent": ("o", "atendimento humano", "a human agent"),
+                   "general_agent": ("a", "consulta ao vivo", "the live lookup")}
+_INTERNAL_RE = re.compile(r"(?:\b(?P<det>o|a|os|as|do|da|dos|das|no|na|nos|nas|pelo|pela|pelos|pelas|ao|aos|à|às|"
+                          r"the)\s+)?`?\b(?P<name>" + "|".join(_INTERNAL_NAMES) + r")\b`?", re.IGNORECASE)
+_TO = {"o": "ao", "a": "à", "os": "aos", "as": "às"}  # preposição "a" + artigo
+
+
+def _agent_words(m: re.Match, language: str) -> str:
+    art, noun, english = _INTERNAL_NAMES[m.group("name").lower()]
+    det = (m.group("det") or "").lower()
+    if language == "en":
+        out = english
+    elif det in ("ao", "aos", "à", "às"):
+        out = f"{_TO[art]} {noun}"
+    else:  # do/da... = "d" + artigo; no/na... = "n" + artigo; pelo/pela... = "pel" + artigo; o/a/os/as = artigo
+        out = f"{next((p for p in ('pel', 'd', 'n') if det.startswith(p)), '')}{art} {noun}"
+    return out[0].upper() + out[1:] if next((c for c in m.group(0) if c.isalpha()), "").isupper() else out
+
+
+# Citação do cartão de capacidades ("[policy:capabilities]") é para o verificador, não para o cliente: sem limpeza,
+# 19 de 69 respostas ao vivo mostravam o código. Tirar só o código deixava a oração pela metade (medido nos textos
+# gravados do ensaio, rodada 11: 5 de 266 com citação; 0 com esta versão): "Segundo a [policy:x], a antecipação" →
+# "Segundo a, a antecipação"; "confirmar (conforme [policy:x])." → "confirmar (."; "From [policy:x], I can" → "From,
+# I can"; "(conforme [policy:x])\n\nNão..." → "(Não..."; "Fonte: [policy:x]" → "Fonte:".
+# Agora sai a oração da citação inteira: as palavras que só existiam por causa dela (preposição, artigo, locução:
+# "segundo a", "de acordo com o", "as stated in"), os parênteses, as vírgulas e o rótulo ("Fonte:") que a
+# delimitavam. O resto da frase fica como estava; a maiúscula muda só quando a frase passa a começar ali.
+# A limpeza nunca apaga conteúdo; na dúvida, o texto fica e sai só o código (revisão adversarial da rodada 12: a
+# lista única de aberturas, pt e en juntos, comia a última palavra da frase, "de cada uma [ref]" → "de cada", gravado
+# em 2 casos da entrega anterior; a contagem "até 2 palavras" apagava a resposta curta, "15 minutos conforme [ref]."):
+# - abertura é a palavra que introduz a citação: locução de adjunto ("conforme", "segundo a", "per") ou apontador
+#   ("veja", "see"); no português também a preposição e o artigo definido (lá a preposição não fica solta no fim da
+#   frase: em "está em [ref]" a citação era o objeto); no inglês a preposição só abrindo a oração ("From [ref], I
+#   can") ou depois de verbo que aponta ("is listed in [ref]"), porque no fim da frase ela costuma ser partícula
+#   ("logged in", "turned on"). Pronome e numeral ("cada uma", "propor um") e o "do"/"no" do inglês ficam;
+# - a frase (ou só a oração final dela) sai inteira só quando apontava a citação e nada mais: vazia ("Veja [ref]."),
+#   rótulo de fonte ("Fonte: [ref]") ou citação como objeto de verbo que aponta ("Essa política está em [ref].");
+#   nunca com número e nunca a resposta ("15 minutos conforme [ref]." → "15 minutos."; "Sim, conforme [ref].").
+# Medido nos 512 textos com citação gravados nas baterias das rodadas 10 e 11 (cassetes do ensaio e do domínio):
+# frente à versão anterior, mudam 5, os 5 com defeito ("de cada.", "está.", "são só."); nenhum código vaza.
+_REF = r"\[policy:[\w.-]+\]"
+_REF_RUN = re.compile(rf"{_REF}(?:[ \t]*(?:[,;]|\be\b|\band\b)?[ \t]*{_REF})*", re.IGNORECASE)
+_ADJUNCT = ("de acordo com|com base n[oa]s?|com base em|nos termos d[oa]s?|conforme|segundo|consoante|"
+            "according to|as per|as stated in|as described in|as set out in|as shown in|in line with|"
+            "in accordance with|based on|per")
+_POINTER = "vide|veja também|ver também|veja|ver|consulte|confira|cf\\.|see also|see|refer to"
+_PREP = {"pt": "pel[oa]s?|n[oa]s?|d[oa]s?|em|de|por|para|sob|ao|aos|às?|os?|as?",
+         "en": "under|by|from|in|on|at|the|our|this"}
+_LEAD_RUN = {lang: re.compile(rf"(?:(?<![\w-])(?:{_ADJUNCT}|{_POINTER}|{preps})[ \t]+)+$", re.IGNORECASE)
+             for lang, preps in _PREP.items()}
+_OPENER = re.compile(rf"(?<![\w-])(?:{_ADJUNCT}|{_POINTER})(?![\w-])", re.IGNORECASE)
+_IS_ADJUNCT = re.compile(rf"(?<![\w-])(?:{_ADJUNCT})(?![\w-])", re.IGNORECASE)
+# verbo ou nome que só aponta onde está a regra: com a citação de objeto, a frase não diz mais nada
+_POINTS = {"pt": "está|estão|fica|ficam|consta|constam|aparece|aparecem|descrit[oa]s?|listad[oa]s?|detalhad[oa]s?|"
+                 "explicad[oa]s?|definid[oa]s?|previst[oa]s?|indicad[oa]s?|disponíve(?:l|is)|é|são|só|detalhes|"
+                 "informações|mais|pode|podem|ver|veja|consulte|consultar|confira|conferir|leia|acesse",
+           "en": "is|are|be|been|listed|described|detailed|explained|found|covered|outlined|shown|defined|stated|"
+                 "available|details|information|info|more|can|could|see|check"}
+_POINTS_TAIL = {lang: re.compile(rf"(?<![\w-])(?:{words})$", re.IGNORECASE) for lang, words in _POINTS.items()}
+_SOURCE_LABEL = re.compile(r"(?:fontes?|sources?|refs?\.?|referências?|references?|cf\.?|ver|veja|vide|see|"
+                           r"(?:mais )?detalhes|(?:more )?details|saiba mais|learn more)[ \t]*:?", re.IGNORECASE)
+_YES_NO = re.compile(r"(?:sim|n[ãa]o|yes|no)\b", re.IGNORECASE)
+_INTERJECTION = re.compile(r"sim|n[ãa]o|yes|no|ok|okay|claro|certo|exato|depende|it depends|sure|of course",
+                           re.IGNORECASE)
+_NUMBER = re.compile(r"\d|[$€£%]")
+# onde começa a oração final: separador ou conjunção de causa ("e"/"and" não: juntam nomes, "crédito e débito")
+_CLAUSE_CUT = re.compile(r"[ \t]*[,;—–]|[ \t]+(?:porque|pois|já que|uma vez que|because|since)(?![\w-])",
+                         re.IGNORECASE)
+# começo de frase, de linha, de item de lista ou de citação em bloco; depois de ":" a oração também começa, mas
+# sem maiúscula
+_LINE_START = r"(?:^|\n)[ \t]*(?:>[ \t]*)*(?:[-*•]|\d+[.)])?[ \t]*"
+_CLAUSE_START = re.compile(rf"(?:{_LINE_START}|[.!?][\"”')\]*_]*[ \t]+|(?P<colon>:)[*_]*[ \t]+)$")
+_SENTENCE_HEAD = re.compile(rf"(?:{_LINE_START}|[.!?][\"”')\]*_]*[ \t]+)(?P<words>[^.!?\n]*)$")
+_ENDS_SENTENCE = re.compile(r"[ \t]*(?:[.!?]+|(?=\n)|$)")
+_BARE_ITEM = re.compile(r"(?:^|(?<=\n))[ \t]*(?:>[ \t]*)*(?:[-*•]|\d+[.)])[ \t]*$")
+_OPENS_CLAUSE = re.compile(r"(?:^|[\n.!?:;,(—–])[\s\"”')\]*_`>•-]*$")
+
+
+def _join(left: str, right: str) -> str:
+    """Cola os dois lados do que saiu: um espaço entre palavras, nenhum antes de pontuação ou de quebra de linha. O
+    delimitador que o corte deixou sem conteúdo ("()", "(." e ", .") sai junto, só ali: o "()" de `pos.init()` em
+    outro ponto da resposta é conteúdo e fica (antes uma rede global apagava qualquer "()" de qualquer resposta)."""
+    right = right.lstrip(" \t")
+    if left.rstrip(" \t").endswith("(") and re.match(r"\)|[.,;:!?](?:\s|$)", right):
+        left = left.rstrip(" \t")[:-1]
+        right = right[1:].lstrip(" \t") if right.startswith(")") else right
+    if left.rstrip(" \t").endswith(",") and right[:1] in (".", ";", ":", "!", "?"):
+        left = left.rstrip(" \t")[:-1]
+    if not right.strip():
+        return left.rstrip()
+    if right[0] in "\n.,;:!?)]":
+        return left.rstrip(" \t") + right
+    return f"{left} {right}" if left and not left[-1].isspace() and left[-1] not in "([" else left + right
+
+
+def _unwrap(left: str, right: str) -> tuple[str, str]:
+    """Marcação que ficaria vazia em volta da citação ("**[ref]**", "**Conforme [ref]**") sai com ela."""
+    mark = re.search(r"(\*\*|__|[*_`])$", left)
+    if mark and right.startswith(mark.group(1)):
+        return left[:mark.start()], right[len(mark.group(1)):]
+    return left, right
+
+
+def _lead(left: str, language: str) -> tuple[int, bool] | None:
+    """Onde começam, no fim de `left`, as palavras que só introduziam a citação, e se eram locução de adjunto
+    ("conforme [ref]": tirada a citação, a frase continua inteira) ou apontavam para ela ("veja [ref]", "está em
+    [ref]": a citação era o objeto)."""
+    lang = "en" if language == "en" else "pt"
+    run = _LEAD_RUN[lang].search(left)
+    if not run:
+        return None
+    start = run.start()
+    if lang == "en":
+        if opener := _OPENER.search(run.group(0)):
+            start += opener.start()  # "logged in per [ref]": o "in" é da frase
+        elif not (_OPENS_CLAUSE.search(left[:start]) or _POINTS_TAIL["en"].search(left[:start].rstrip())):
+            return None  # "turned on [ref]", "logged in [ref]": partícula, não abertura
+    return start, bool(_IS_ADJUNCT.search(left[start:]))
+
+
+def _pointer_cut(words: str, adjunct: bool | None, language: str) -> int | None:
+    """Onde começa, na frase `words` (do começo da frase até a citação, sem a abertura), o que só apontava a citação:
+    0 é a frase inteira; None, nada além da citação sai. A oração que aponta começa depois do último separador ou na
+    última abertura ("Nada é executado, conforme descrito em [ref]." → "Nada é executado.")."""
+    core = words.rstrip()
+    if not core or _SOURCE_LABEL.fullmatch(core):
+        return 0
+    core = core.rstrip(" \t,;—–")
+    if adjunct is not False or not _POINTS_TAIL["en" if language == "en" else "pt"].search(core):
+        return None
+    at = max([m.start() for m in _CLAUSE_CUT.finditer(core)] + [m.start() for m in _OPENER.finditer(core)] + [0])
+    if at and len(core[:at].split()) <= 2 and not _YES_NO.match(core):
+        at = 0  # "Se quiser, mais detalhes em [ref].": o que vem antes também só apontava
+    if _NUMBER.search(core[at:]) or (at == 0 and _YES_NO.match(core)):
+        return None
+    return at
+
+
+def _drop_citation(left: str, right: str, language: str) -> str:
+    """O texto sem a citação que estava entre `left` e `right`, sem delimitador nem palavra órfã."""
+    left, right = _unwrap(left, right)
+    lead = _lead(left, language)
+    if lead:
+        left, right = _unwrap(left[:lead[0]], right)
+    bare = left.rstrip(" \t")
+    if bare.endswith("("):  # "(conforme [ref])" some inteiro; "([ref], prazo)" fica "(prazo)"
+        if close := re.match(r"[ \t]*\)", right):
+            return _join(bare[:-1], right[close.end():])
+        return _join(bare, re.sub(r"^[ \t]*(?:[,;:][ \t]*)?", "", right))
+    end = _ENDS_SENTENCE.match(right)
+    if end and (head := _SENTENCE_HEAD.search(left)):
+        at = _pointer_cut(head.group("words"), lead[1] if lead else None, language)
+        if at:  # só a oração final apontava: sai ela, o fim da frase fica
+            return _join(left[:head.start("words") + at], right)
+        if at == 0:  # a frase inteira sai; se ela era a linha (item de lista), sai a linha com o marcador
+            prefix, rest = left[:head.start("words")], right[end.end():]
+            if re.match(r"[ \t]*(?:\n|$)", rest):
+                if item := _BARE_ITEM.search(prefix):
+                    prefix = prefix[:item.start()]
+                if not prefix or prefix.endswith("\n"):
+                    rest = rest.lstrip(" \t\n")
+            return _join(prefix, rest)
+    if start := _CLAUSE_START.search(left):  # a citação abria a oração: sai o separador que a fechava
+        right = re.sub(r"^[ \t]*[,;:][ \t]*", "", right)
+        if start.group("colon") is None:
+            right = re.sub(r"^([ \t]*[*_]*)([a-zà-ÿ])", lambda m: m.group(1) + m.group(2).upper(), right)
+        return _join(left, right)
+    if bare[-1:] in (",", ";", "—", "–"):
+        closing = re.match(r"[ \t]*([,;—–])", right)
+        if not closing:  # "um atendente, conforme [ref].": sai o separador que abria a citação
+            return _join(bare[:-1], right)
+        head = _SENTENCE_HEAD.search(bare[:-1])
+        said = re.split(r"[:;—–]", head.group("words"))[-1].strip() if head else ""
+        pair = {bare[-1], closing.group(1)}
+        if (pair == {","} or pair <= {"—", "–"}) and not _INTERJECTION.fullmatch(said):
+            return _join(bare[:-1], right[closing.end():])  # aposto: "A antecipação, segundo a [ref], precisa"
+        # o da esquerda não abria a citação ("Não, segundo [ref], a…"; "proposta; conforme [ref], ela…"): fica
+        return _join(bare, right[closing.end():])
+    return _join(left, right)
+
+
+def _scrub_internal(answer: str, language: str) -> str:
+    """Nome interno de agente (ex.: "faq_agent"), valor interno de lista fechada (ex.: "sem_sinal") e código do cartão
+    de capacidades não chegam ao cliente, e o que os cercava não fica pela metade."""
+    answer = _INTERNAL_RE.sub(lambda m: _agent_words(m, language), answer)
+    answer = capabilities.readable_values(answer, language)
+    while ref := _REF_RUN.search(answer):
+        answer = _drop_citation(answer[:ref.start()], answer[ref.end():], language)
+    # resposta que era só a citação: nunca 200 vazio (vazio no histórico vira 400 da API no turno seguinte)
+    return answer if re.search(r"\w", answer) else NO_ANSWER.get(language, NO_ANSWER["pt"])
+
+
+# --- citação para o cliente ----------------------------------------------------------------------------------------
+# O id interno do trecho ("[sup-duvidas-05]") é do índice, não do cliente: medido na entrega do ensaio de 60 min, a
+# resposta ao vivo terminava cada passo com "[sup-duvidas-05]" e a fonte aparecia como "(fontes: prod-crediario-02 e
+# sup-duvidas-crediario-03)". Na resposta final o id vira o número da fonte na lista `sources` da resposta ("[1]",
+# igual em pt e en); o id continua em `sources`, no trace e nas etapas. Id de trecho que não é fonte do turno sai
+# (com a limpeza das citações acima). Roda depois de toda checagem que lê o id na frase (claims, answer_first).
+_BRACKETS = re.compile(r"\[[^\]\[\n]+\](?:[ \t]*\[[^\]\[\n]+\])*")
+_PAREN_IDS = re.compile(r"\([ \t]*(?:(?:fontes?|sources?|refs?\.?|referências?|references?)[ \t]*:[ \t]*)?"
+                        r"(?P<ids>[^()\n]+?)[ \t]*\)", re.IGNORECASE)
+_ID_SEP = re.compile(r"[ \t]*[,;][ \t]*|[ \t]+(?:e|and)[ \t]+|\][ \t]*\[", re.IGNORECASE)
+_BARE_ID = re.compile(r"(?<![\w\[-])[a-z][\w]*(?:-\w+)+(?![\w-])")
+
+
+def _id_parts(text: str) -> list[str]:
+    return [p.strip() for p in _ID_SEP.split(text.strip("[]() \t")) if p.strip()]
+
+
+def number_citations(answer: str, sources: list, known: set[str] | frozenset[str] = frozenset(),
+                     language: str = "pt") -> str:
+    """Troca o id interno de trecho citado ("[sup-wifi-02][sup-wifi-01]", "(fontes: a e b)") pelo número da fonte na
+    lista `sources` ("[1][2]"). `known` = ids do índice: id do índice que não é fonte do turno sai da frase. Colchete
+    ou parêntese que não é só de ids ("[Menu > Vendas]", "(2 dias úteis)") fica como está."""
+    order: dict[str, int] = {}
+    for src in sources:
+        order.setdefault(src.id, len(order) + 1)
+    ids = set(order) | set(known)
+    if not ids:
+        return answer
+    for pattern, group in ((_BRACKETS, 0), (_PAREN_IDS, "ids")):
+        pos = 0
+        while m := pattern.search(answer, pos):
+            parts = _id_parts(m.group(group))
+            if not parts or not all(p in ids for p in parts):
+                pos = m.end()
+                continue
+            cite = "".join(f"[{n}]" for n in sorted({order[p] for p in parts if p in order}))
+            if cite:
+                answer, pos = answer[:m.start()] + cite + answer[m.end():], m.start() + len(cite)
+            else:  # só id fora das fontes do turno: sai como a citação interna, sem deixar a frase pela metade
+                answer, pos = _drop_citation(answer[:m.start()], answer[m.end():], language), 0
+    return _BARE_ID.sub(lambda m: f"[{order[m.group(0)]}]" if m.group(0) in order else m.group(0), answer)
+
+
+# --- aviso de espera depois da resposta do atendente --------------------------------------------------------------
+# Medido ao vivo (split hitl do ensaio de 60 min): o atendente respondeu dentro da espera do turno, a resposta dele
+# saiu no texto e, no fim, ainda vinha "A resposta do atendente aparece nesta mesma conversa." (o redator copia a
+# linha do cartão de capacidades). Com o passo `human` no turno, a espera acabou: o aviso sai (a frase, ou só a oração
+# ", e a resposta ... nesta conversa"). Sem resposta do atendente no turno, o aviso fica: é a informação certa.
+_WAIT_NOTICE = re.compile(
+    r"(?P<lead>[ \t]*(?:[,;]?[ \t]*\b(?:e|and)|[,;])[ \t]+)?"
+    r"(?:(?:a|sua)[ \t]+resposta|(?:the|their|your)[ \t]+(?:agent[’']?s[ \t]+)?(?:reply|answer|response)"
+    r"|(?:you[’']?ll|you[ \t]+will)[ \t]+(?:get|see|receive)[ \t]+(?:the|their|a|an)[ \t]+(?:reply|answer|response))"
+    r"[^.!?\n]{0,40}?\b(?:aparece\w*|vai[ \t]+aparecer|chega\w*|vai[ \t]+chegar"
+    r"|ser[áa][ \t]+(?:enviada|mostrada|exibida)|show\w*[ \t]+up|appear\w*|arriv\w*|come\w*[ \t]+(?:in|through))"
+    r"[^.!?\n]{0,20}?(?:\b(?:nesta|nessa|neste|nesse|in[ \t]+this|here)\b[^.!?\n]{0,15}?"
+    r"\b(?:conversa|conversation|chat)\b"
+    r"|\bpor[ \t]+aqui\b|\bright[ \t]+here\b)", re.IGNORECASE)
+
+
+def drop_wait_notice(answer: str) -> str:
+    """Tira o aviso de espera pela resposta do atendente ("A resposta do atendente aparece nesta mesma conversa.")."""
+    for sent in claims.split_sentences(answer):
+        m = _WAIT_NOTICE.search(sent.text)
+        if not m:
+            continue
+        if m.group("lead"):  # só a oração: "Encaminhei (protocolo X), e a resposta vai aparecer nesta conversa."
+            trimmed = sent.text[:m.start()].rstrip(" ,;") + sent.text[m.end():]
+            answer = answer.replace(sent.text, trimmed, 1)
+        elif not sent.text[:m.start()].strip(" *_\"'“”"):  # a frase é o aviso
+            answer = claims.remove_sentences(answer, {sent.text})
+    return re.sub(r"[ \t]+\n", "\n", answer).strip()
+
+
+# --- resposta primeiro --------------------------------------------------------------------------------------------
+# Defeito medido em resposta ao vivo: a resposta abria com a ausência ("The sources don't say X is mandatory.") e só
+# a frase seguinte, com citação, trazia a regra que responde; o fim repetia a ausência. O cliente lê a ressalva antes
+# da resposta (o eval marca não resolvido). O prompt já pede "a 1ª frase responde" (prompts/faq.md), mas nada no
+# código impunha. A guarda tira essa 1ª frase só quando nada se perde e a resposta segue legível:
+# - a 1ª frase ABRE dizendo que as fontes não trazem algo e não cita fonte;
+# - a 2ª cita fonte do turno, não é outra ausência nem ressalva de "só achei..." (que continua a 1ª);
+# - outra frase diz, sem citação, o que AS FONTES não trazem (ou "não encontrei") e fecha a resposta: o cliente
+#   continua lendo o que falta. Ressalva de um trecho só ("o trecho não diz a que plano vale") não conta;
+# - a 2ª não depende da 1ª: "They do say X [n]" vira "X [n]"; "They describe it..." deixa tudo como está.
+# Levar a 1ª frase para o fim (quando ela é a única ausência) ficou de fora de propósito: nas respostas gravadas isso
+# valeria em 3 e pioraria as 3, porque ali a ressalva era a resposta direta ("the sources don't say whether X
+# connects over Wi-Fi") e a frase seguinte dependia dela.
+_NOT_EN = r"(?:don[’']?t|do\s+not|doesn[’']?t|does\s+not)"
+_SOURCES = r"(?:(?:the|these)\s+(?:sources?|passages)|(?:as|essas)\s+(?:fontes|passagens)|os\s+trechos)\b"
+_NOT_FOUND = (r"(?:n[ãa]o\s+(?:encontrei|achei|localizei)"
+              r"|i\s+(?:couldn[’']?t|could\s+not|didn[’']?t|did\s+not)\s+find)\b")
+_OPENS_ABSENT = re.compile(rf"^\W*(?:{_SOURCES}(?:\s+\w+){{0,3}}?\s+(?:{_NOT_EN}|only|n[ãa]o|s[óo])\b"
+                           rf"|{_NOT_FOUND}[^.!?]*\b(?:nas\s+fontes|in\s+the\s+sources?)\b)", re.IGNORECASE)
+_SOURCES_ABSENT = re.compile(rf"\b{_SOURCES}(?:\s+\w+){{0,3}}?\s+(?:{_NOT_EN}|n[ãa]o)\b|\b{_NOT_FOUND}",
+                             re.IGNORECASE)
+_HEDGE = re.compile(r"^\W*(?:\w+\s+){0,3}?(?:s[óo]|apenas|somente|[úu]nic[ao]s?|only|just)\b", re.IGNORECASE)
+_CONTRAST = re.compile(r"\b(?:but|however|although|mas|por[ée]m|embora|contudo)\b", re.IGNORECASE)  # 1ª com conteúdo
+_LEAD = re.compile(r"^(?:(?:but|however|still|mas|por[ée]m|no entanto|contudo),?\s+)?"
+                   r"(?:they|elas|eles)\s+(?:do\s+)?(?:say|state|show|mention|explain|dizem|informam|mostram|trazem)"
+                   r"\s+(?:that\s+|que\s+)?", re.IGNORECASE)
+_DANGLING = re.compile(r"^\W*(?:they|it|this|that|these|those|elas?|eles?|isso|isto|esse|essa|este|esta)\b"
+                       r"|^\W*(?:\S+\s+){0,5}?(?:ele|ela|eles|elas|dele|dela|deles|delas|it|its|they|them|their)\b",
+                       re.IGNORECASE)
+_CITE = re.compile(r"\[([^\]\[]+)\]")
+
+
+def _cites(sentence: str, ids: set[str]) -> bool:
+    return any(part.strip() in ids for m in _CITE.finditer(sentence) for part in m.group(1).split(","))
+
+
+def answer_first(answer: str, source_ids: set[str]) -> str:
+    """Tira a ressalva de abertura ("as fontes não dizem...") quando a frase seguinte, citada, já responde e outra
+    ausência fecha a resposta (regras acima). Sem fonte do turno citada, a resposta não muda."""
+    if not source_ids:
+        return answer
+    sents = claims.split_sentences(answer)
+    if len(sents) < 3:
+        return answer
+    first, second = sents[0].text, sents[1].text
+
+    def absent(text: str) -> bool:
+        return claims.states_absence(text) or bool(_SOURCES_ABSENT.search(text))
+
+    if not _OPENS_ABSENT.search(first) or _cites(first, source_ids) or _CONTRAST.search(first):
+        return answer
+    if not _cites(second, source_ids) or absent(second) or _HEDGE.search(second):
+        return answer
+    if not any(_SOURCES_ABSENT.search(s.text) and not _cites(s.text, source_ids) for s in sents[2:]):
+        return answer
+    lead = _LEAD.sub("", second, count=1)
+    if _DANGLING.search(lead) or not lead.strip():
+        return answer
+    out = claims.remove_sentences(answer, {first})
+    if lead != second:
+        out = out.replace(second, lead[0].upper() + lead[1:], 1)
+    METRICS.inc("answer_first_total", action="dropped_opening_absence")
+    return out
+
+
+def _digest(store, conversation_id: str, ledger: memory.Ledger | None = None) -> str:
+    """Resumo rolante e determinístico do que saiu da janela recente (o turno 15 ainda sabe do turno 1).
+
+    Guarda as falas do cliente e do atendente (com a intenção), já mascaradas; sem LLM, sem custo, auditável.
+    Cortar cada fala em 120 caracteres e manter só as últimas perde id, valor e data de conversa longa: a linha
+    final do livro de fatos devolve ao resumo o que o cliente disse (app/memory.py), para qualquer leitor dele.
+    """
+    older = store.older_messages(conversation_id, skip_last=HISTORY_WINDOW)
+    if not older:
+        return ""
+    items = [f"[{m['intent'] or m['role']}] {m['content'][:120]}" for m in older if m["role"] != "assistant"]
+    kept = " | ".join(items[-DIGEST_ITEMS:])
+    return f"{kept} | {facts}" if ledger and (facts := ledger.digest_line()) else kept
+
+
+@dataclass
+class _Check:
+    unsupported: list[str]
+    claims: list[str]
+
+    def size(self) -> int:
+        return len(self.unsupported) + len(self.claims)
+
+
+def _log_prompts(trace_id: str) -> dict[str, str]:
+    """Versões das instruções deste request, no log (uma linha por request) e na resposta."""
+    versions = prompt_versions()
+    if versions:
+        log.info("prompt_versions", extra={"extra_fields": {"trace_id": trace_id, "prompts": versions}})
+    return versions
+
+
+def _check(answer: str, evidence: list[str], said: str, outcome, handoff: Handoff) -> _Check:
+    calls = [c for r in outcome.results for c in r.tool_calls]
+    ticket = handoff.required or any(r.handoff and r.handoff.ticket_id for r in outcome.results)
+    return _Check(unsupported_numbers(answer, evidence, question=said),
+                  grounding.claimed_actions(answer, calls, ticket, evidence))
+
+
+LANGUAGE_MIN_WORDS = 8  # resposta curta ("Ok", um nome, um número) não tem como o detector decidir
+
+
+def wrong_language(answer: str, language: str) -> bool:
+    """A resposta está claramente no outro idioma (vantagem de >= 2 palavras do idioma errado)?"""
+    return len(answer.split()) >= LANGUAGE_MIN_WORDS and router.clear_language(answer) not in (None, language)
+
+
+def _fix_language(answer: str, final: _Check, *, ctx: Context, evidence: list[str], said: str, outcome,
+                  handoff: Handoff, public: str) -> tuple[str, _Check]:
+    """Idioma errado na saída: UMA reescrita (só com LLM) que não pode piorar número nem ação alegada."""
+    if not wrong_language(answer, ctx.language):
+        return answer, final
+    METRICS.inc("language_mismatch_total", expected=ctx.language)
+    name = grounding.LANGUAGE_NAME.get(ctx.language, ctx.language)
+    fixed = grounding.rewrite(answer, [f"idioma: o cliente escreveu em {name}; reescreva a resposta INTEIRA em {name}, "
+                                       "sem mudar nenhum fato nem número"],
+                              language=ctx.language, evidence=evidence, question=ctx.text)
+    if not fixed:
+        return answer, final
+    fixed = mask_output(fixed, public=public)
+    after = _check(fixed, evidence, said, outcome, handoff)
+    ok = (not wrong_language(fixed, ctx.language) and len(after.unsupported) <= len(final.unsupported)
+          and len(after.claims) <= len(final.claims))
+    METRICS.inc("language_rewrites_total", outcome="accepted" if ok else "rejected")
+    return (fixed, after) if ok else (answer, final)
+
+
+def _lost_live_values(before: str, after: str, outcome, language: str) -> bool:
+    """A checagem de frases cortou um valor obrigatório do dado ao vivo que a resposta trazia antes dela?"""
+    from .agents import live_missing
+
+    for r in outcome.results:
+        must = getattr(r, "live_must", None)
+        if must and len(live_missing(after, must, language)) > len(live_missing(before, must, language)):
+            return True
+    return False
+
+
+def _drops_live_values(outcome, language: str) -> bool:
+    """A resposta redigida pelo supervisor deixou de fora um valor obrigatório (mínima, máxima, chance de chuva; venda
+    e compra) que o texto do especialista de dado ao vivo traz?"""
+    from .agents import live_missing
+
+    for r in outcome.results:
+        must = getattr(r, "live_must", None)
+        if must and r.text and not live_missing(r.text, must, language) and live_missing(outcome.answer, must,
+                                                                                       language):
+            return True
+    return False
+
+
+def _enforce(answer: str, *, evidence: list[str], said: str, ctx: Context, outcome, handoff: Handoff,
+             route: list[str], public: str) -> tuple[str, list[str], str, list[str], Handoff]:
+    """Saída segura da resposta final: (resposta, números sem base, numbers_action, rótulos de risco, handoff).
+
+    1) detecta no rascunho: número sem base e ação alegada sem execução (tool/caso do turno);
+    2) com LLM, UMA reescrita com a mesma evidência, a lista dos números proibidos e as frases a corrigir; vale se
+       não piorar nada e melhorar algo;
+    3) o que sobrar: números seguem NUMBERS_POLICY (flag só sinaliza; redact troca por "[valor não confirmado]" e
+       oferece o humano; escalate troca e abre o caso; intenção sem escalonamento, ex. clima, cai em redact);
+       ação alegada sai da resposta com o aviso de que nada foi feito. Ação alegada sempre vira `claimed_action`.
+    """
+    lang = ctx.language
+    policy = grounding.numbers_policy()
+    draft = _check(answer, evidence, said, outcome, handoff)
+    risks = ["claimed_action"] if draft.claims else []
+    if draft.unsupported:
+        METRICS.inc("numeric_ungrounded_total")
+        log.warning("numeric_ungrounded", extra={"extra_fields": {"numbers": draft.unsupported, "policy": policy}})
+    if draft.claims:
+        METRICS.inc("claimed_action_total")
+        log.warning("claimed_action", extra={"extra_fields": {"claims": draft.claims}})
+    problems: list[str] = []
+    if draft.unsupported and policy != "flag":
+        problems.append("números sem base na evidência (proibidos): " + ", ".join(draft.unsupported))
+    if draft.claims:
+        problems.append("alega ação que nenhuma ferramenta executou neste turno: " + "; ".join(draft.claims))
+    final = draft
+    if problems:
+        fixed = grounding.rewrite(answer, problems, language=lang, evidence=evidence, question=ctx.text)
+        if fixed:
+            fixed = mask_output(fixed, public=public)
+            after = _check(fixed, evidence, said, outcome, handoff)
+            if len(after.unsupported) <= len(draft.unsupported) and len(after.claims) <= len(draft.claims) \
+                    and after.size() < draft.size():
+                answer, final = fixed, after
+            METRICS.inc("answer_rewrites_total", outcome="accepted" if final is after else "rejected")
+    answer, final = _fix_language(answer, final, ctx=ctx, evidence=evidence, said=said, outcome=outcome,
+                                  handoff=handoff, public=public)
+    action = "regenerated" if draft.unsupported and not final.unsupported else "none"
+    if final.unsupported:
+        if policy == "flag":
+            action = "flagged"
+        else:
+            answer = grounding.redact(answer, final.unsupported, lang)
+            escalate = policy == "escalate" and not handoff.required \
+                and ctx.intent not in domain.active().NO_ESCALATION
+            if escalate:
+                ctx.handoff_reason = "unsupported_numbers"
+                esc = escalation_agent(ctx)
+                answer = f"{answer}\n\n{esc.text}"
+                handoff = esc.handoff or handoff
+                route.append("escalation")
+                action = "escalated"
+            else:
+                answer = f"{answer}\n\n{grounding.OFFER.get(lang, grounding.OFFER['pt'])}"
+                action = "redacted"
+    if final.claims:
+        answer = grounding.drop_claims(answer, final.claims, lang)
+    if action != "none":
+        METRICS.inc("numeric_enforced_total", action=action)
+    return answer, final.unsupported, action, risks, handoff
+
+
+WRITE_HELD = {"pt": "Não posso propor alterações agora: a verificação de segurança está indisponível. "
+                    "Tente de novo em instantes.",
+              "en": "I can't propose changes right now: the safety check is unavailable. Please try again shortly."}
+
+
+def _hold_writes(store, outcome, language: str) -> None:
+    """Sem o classificador LLM, a escrita proposta no turno é recusada (falha fechada para escrita)."""
+    for result in outcome.results:
+        if result.pending_action:
+            store.claim_action(result.pending_action, frm="pending", to="expired")
+            METRICS.inc("writes_held_total", reason=UNAVAILABLE)
+            result.pending_action, result.text = None, WRITE_HELD.get(language, WRITE_HELD["pt"])
+            outcome.answer = None  # a resposta é remontada dos resultados, já sem a proposta
+
+
+def _guard_and_route(message: str, history: list[dict]) -> tuple[Verdict, RouterDecision | None]:
+    with span("guardrails"):
+        verdict = pre_check(message)
+    if verdict.blocked or PII_ECHO in verdict.flags:  # pedido de repetir/guardar CPF ou cartão: resposta fixa, sem LLM
+        return verdict, None
+    if not get_llm("guardrail").enabled:
+        verdict = llm_check(verdict)  # sem classificador: a suspeita da camada 1 bloqueia (falha fechada)
+        if verdict.blocked:
+            return verdict, None
+        with span("router"):
+            return verdict, route(verdict.text, history)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        g = pool.submit(contextvars.copy_context().run, llm_check, verdict)
+        r = pool.submit(contextvars.copy_context().run, route, verdict.text, history)
+        with span("router"):
+            decision = r.result()
+        verdict = g.result()
+    return verdict, (None if verdict.blocked else decision)
+
+
+def handle(req: ChatRequest, user_id: str, identity_verified: bool = True) -> ChatResponse:
+    t0 = time.perf_counter()
+    resp = _handle(req, user_id, identity_verified)
+    ms = round((time.perf_counter() - t0) * 1000, 1)
+    if not resp.blocked:
+        # O turno inteiro no histograma (span "turn"): o p95 do SLO e da escalada do runbook sai do Prometheus. O
+        # bloqueio do guardrail leva ms e fica fora (conta em guardrail_blocks_total e no span guardrails): uma rajada
+        # de ataques baixaria o p95 e esconderia o turno lento. Medido no ensaio: 39 bloqueios baixavam o p50 do
+        # total de 17,6 s para 16,3 s (evals/trace_stats.py tira os mesmos do SLO).
+        METRICS.observe("turn", ms)
+    try:  # analytics é melhor esforço: falha ao registrar nunca derruba o atendimento
+        get_store().log_request({
+            "trace_id": resp.trace_id, "conversation_id": resp.conversation_id, "user_id": user_id,
+            "intent": resp.intent, "route": resp.route, "handoff": resp.handoff.required, "blocked": resp.blocked,
+            "ungrounded": bool(resp.unsupported_numbers), "cost_usd": resp.usage.cost_usd,
+            "ms": ms})  # sem o texto: analytics não guarda conteúdo
+        # evidência (mascarada) e versão das instruções: o 👎 desta resposta vira candidato a caso com elas
+        get_store().save_snapshot(resp.trace_id, resp.conversation_id, list(resp.evidence), resp.prompt_versions)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("analytics_log_failed", extra={"extra_fields": {"error": type(exc).__name__}})
+    return resp
+
+
+def _handle(req: ChatRequest, user_id: str, identity_verified: bool = True) -> ChatResponse:
+    trace_id = new_trace_id()
+    store = get_store()
+    conversation_id = req.conversation_id or uuid.uuid4().hex[:12]
+    owner = store.conversation_owner(conversation_id)
+    if owner and owner != user_id:
+        raise PermissionError("conversation belongs to another user")
+    language = detect_language(req.message)
+    base = {"trace_id": trace_id, "conversation_id": conversation_id, "user_id": user_id,
+            "identity_verified": identity_verified}
+    if not identity_verified:
+        log.info("unverified_identity", extra={"extra_fields": {"user_id": user_id, "auth_mode": "demo"}})
+
+    history = store.history(conversation_id, limit=HISTORY_WINDOW)
+    verdict, decision = _guard_and_route(req.message, _router_history(store, conversation_id, history))
+    if not verdict.blocked and PII_ECHO in verdict.flags:
+        # recusa de repetir/guardar o dado sensível e segue a conversa: não é bloqueio nem caso humano (não há o que
+        # um atendente resolva); o texto do cliente fica gravado já mascarado
+        METRICS.inc("chat_requests_total", intent="general")
+        METRICS.inc("pii_echo_refused_total")
+        answer = pii_echo_reply(verdict.flags, language)
+        store.add_message(conversation_id, user_id, "user", verdict.text, "general")
+        store.add_message(conversation_id, user_id, "assistant", answer, "general")
+        return ChatResponse(**base, answer=answer, intent="general", confidence=1.0, route=["guardrails"],
+                            language=language, guardrails=verdict.flags, usage=Usage(**request_usage()))
+    if verdict.blocked or decision is None:
+        METRICS.inc("chat_requests_total", intent="blocked")
+        METRICS.inc("guardrail_blocks_total", reason=verdict.reason or "unknown")
+        answer = (SELF_HARM_SUPPORT if verdict.reason == "self_harm" else REFUSAL)[language]
+        return ChatResponse(**base, answer=answer, intent="blocked", route=["guardrails"],
+                            language=language, blocked=True, guardrails=verdict.flags, usage=Usage(**request_usage()))
+
+    language = decision.language
+    ledger = memory.load(store, conversation_id)  # fatos da conversa: sobrevivem ao resumo (app/memory.py)
+    # perfil do usuário (fatos de conversas anteriores dele, datados, como dado): supervisor e especialistas o leem
+    user_memory, user_memory_evidence, profile = _user_memory(store, user_id, conversation_id)
+    ctx = Context(text=verdict.text, language=language, user_id=user_id, conversation_id=conversation_id,
+                  intent=decision.intent, history=history, user_summary=user_memory,
+                  conversation_digest=_digest(store, conversation_id, ledger), ledger=ledger.render())
+    case_action = casestate.observe(conversation_id, verdict.text)  # o cliente confirmou, ou continua com o problema
+    if case_action == "escalate":
+        ctx.facts["escalation_note"] = casestate.summary_for_operator(conversation_id)
+    if tried := casestate.attempts(conversation_id):
+        ctx.facts["attempted_steps"] = tried  # o agente não repete o mesmo conselho
+    if hint := router.standalone_query(verdict.text, history):  # seguimento herda o assunto na busca do RAG
+        ctx.facts.setdefault("query_hints", []).append(hint)
+        METRICS.inc("query_followup_total")
+    # contrato router → faq: a pergunta completa do turno ("" = reescrita recusada); o faq busca por ela quando houver
+    ctx.facts["standalone"] = getattr(decision, "standalone", "") or ""
+    ctx.facts["search_queries"] = list(getattr(decision, "search_queries", []) or [])  # consultas do RAG (LLM)
+    if recalled := recalled_query(profile, verdict.text, conversation_id):
+        ctx.facts["recalled_queries"] = [recalled]  # a busca do faq retoma o assunto da outra conversa (retrieve)
+        METRICS.inc("query_recalled_total")
+    if UNAVAILABLE in verdict.flags:
+        # classificador de segurança indisponível: a leitura segue, mas sem NENHUM agente LLM sobre o texto não
+        # conferido (força o caminho offline durante a orquestração), e a escrita do turno fica retida
+        with force_offline():
+            outcome = supervisor.run(list(decision.plan), ctx, decision.confidence)
+        _hold_writes(store, outcome, language)
+    else:
+        outcome = supervisor.run(list(decision.plan), ctx, decision.confidence)
+
+    answer = outcome.answer or "\n\n".join(r.text for r in outcome.results if r.text)
+    if outcome.answer and _drops_live_values(outcome, language):
+        # a redação do supervisor LLM perdeu valor obrigatório do dado ao vivo que o especialista entregou conferido
+        # (medido: a mínima e a máxima ficaram, a chance de chuva saiu): vale a junção dos textos dos especialistas
+        METRICS.inc("supervisor_answer_dropped_live_total")
+        outcome.answer = None
+        answer = "\n\n".join(r.text for r in outcome.results if r.text)
+    failed = [f for r in outcome.results for f in r.facts.get("lookup_failed", [])]
+    if failed and outcome.answer:
+        # nenhuma consulta de registros trouxe dado: a redação final não afirma ausência na conta (agents.py)
+        fixed = agents.without_account_absence(answer, language, failed)
+        if fixed != answer:
+            METRICS.inc("account_absence_rewritten_total")
+            answer = fixed
+    if not answer.strip():  # nunca 200 vazio: vazio no histórico vira 400 da API no turno seguinte
+        answer = NO_ANSWER[language]
+    docs = {d.id: d.text for d in get_index().docs}
+    public = "\n".join(docs.get(s.id, "") for r in outcome.results for s in r.sources)
+    answer = mask_output(answer, public=public)
+    # número que não está em fonte, tool, template, pergunta nem fala anterior do cliente/operador → reescrita única
+    # com LLM e, se persistir, a política NUMBERS_POLICY (flag | redact | escalate)
+    # + fatos do cliente e das ferramentas de turnos anteriores (livro) e as URLs que o próprio sistema citou como
+    # fonte; nunca a fala do assistente, para um número inventado antes não virar base depois
+    said = " ".join([verdict.text, ctx.conversation_digest, ledger.known_text(),
+                     *(s.url for r in outcome.results for s in r.sources if s.url),
+                     *(m["content"] for m in history if m.get("role") != "assistant")])
+    # cartão de capacidades (app/capabilities.py) é evidência do turno: regra de confirmação/aprovação e o TTL têm base
+    card = capabilities.card(language)
+    turn_evidence = [e for r in outcome.results for e in r.evidence]
+    # o que o redator recebeu como "Fatos da conversa" também é base do turno, e vai para quem audita (juiz, eval):
+    # sem isso, resposta que usa o status da maquininha lido 2 turnos antes parecia sem fonte
+    remembered = [f"[memória da conversa] {mem}"] if (mem := ledger.render()) else []
+    if user_memory_evidence:  # idem para o perfil de outras conversas (sem as datas: ver _user_memory)
+        remembered.append(f"[memória de conversas anteriores] {user_memory_evidence}")
+    evidence = turn_evidence + remembered + [card]
+    handoff = next((r.handoff for r in outcome.results if r.handoff), None) or Handoff()
+    route = ["router", *outcome.route]
+    answer, unsupported, numbers_action, extra_risks, handoff = _enforce(
+        answer, evidence=evidence, said=said, ctx=ctx, outcome=outcome, handoff=handoff, route=route, public=public)
+    # depois dos números: frase sem base e ação oferecida que não existe (CLAIMS_POLICY remove | flag | off)
+    answer = _scrub_internal(answer, language)
+    blocked = any(r.agent == "hold" for r in outcome.results)
+    before_claims = answer
+    answer, claim_report = claims.enforce(answer, evidence=evidence[:-1], question=verdict.text, card=card,
+                                          writes_blocked=blocked)
+    if _lost_live_values(before_claims, answer, outcome, language):
+        # a checagem de frases tirou, junto com um conselho sem base ("leve guarda-chuva"), a frase que trazia um valor
+        # obrigatório do dado ao vivo: vale o texto do especialista (que já passou pela conferência dos valores), com a
+        # mesma checagem de frases
+        METRICS.inc("claims_cut_live_value_total")
+        specialist = "\n\n".join(r.text for r in outcome.results if r.text)
+        answer, claim_report = claims.enforce(_scrub_internal(mask_output(specialist, public=public), language),
+                                              evidence=evidence[:-1], question=verdict.text, card=card,
+                                              writes_blocked=blocked)
+    # depois da última chamada ao LLM (as gravações seguem valendo): a resposta citada vem antes da ressalva
+    answer = answer_first(answer, {s.id for r in outcome.results for s in r.sources})
+    if case_action == "escalate":  # 2º ciclo sem sucesso: humano, com as tentativas, qualquer que seja o motivo
+        if not handoff.required:
+            ctx.handoff_reason = "unresolved_after_cycles"
+            esc = escalation_agent(ctx)
+            answer, handoff = f"{answer}\n\n{esc.text}", esc.handoff or handoff
+            route.append("escalation")
+        ticket = handoff.ticket_id or next((r.handoff.ticket_id for r in outcome.results
+                                            if r.handoff and r.handoff.ticket_id), None)
+        if ticket:  # o turno pode já ter escalado por outro motivo (sem fonte): o operador recebe as tentativas igual
+            cases.attach_note(ticket, casestate.summary_for_operator(conversation_id))
+        METRICS.inc("case_escalated_total", reason=handoff.reason or "unknown")
+    case_state = {"resolved": "resolved", "escalate": "escalated"}.get(case_action) or casestate.after_turn(
+        conversation_id, decision.intent, [c for r in outcome.results for c in r.tool_calls], answer)
+    risks = risk_flags(answer, evidence) + extra_risks
+    for label in risks:
+        METRICS.inc("risk_flags_total", flag=label)
+    if risks:
+        log.warning("risk_flagged", extra={"extra_fields": {"trace_id": trace_id, "flags": risks}})
+    if any(r.agent == "human" for r in outcome.results):  # o atendente já respondeu neste turno: sem aviso de espera
+        answer = drop_wait_notice(answer)
+    # fontes sem repetição, na ordem em que vieram: o "[n]" da resposta é a n-ésima desta lista
+    sources = list({s.id: s for r in outcome.results for s in r.sources}.values())
+    answer = number_citations(answer, sources, set(docs), language)  # por último: as checagens leem o id
+    store.add_message(conversation_id, user_id, "user", verdict.text, decision.intent)  # texto já mascarado
+    store.add_message(conversation_id, user_id, "assistant", answer, decision.intent)
+    memory.update(ledger, user_text=verdict.text, intent=decision.intent, evidence=turn_evidence + [card],
+                  states_subject=router.has_stated_subject(verdict.text))
+    memory.save(store, conversation_id, ledger)
+    _update_summary(store, user_id, conversation_id, ledger, handoff)  # depois do livro: o perfil sai dele
+
+    METRICS.inc("chat_requests_total", intent=decision.intent)
+    if handoff.required:
+        METRICS.inc("handoffs_total", reason=handoff.reason or "unknown")
+    return ChatResponse(
+        **base, answer=answer, intent=decision.intent, confidence=decision.confidence,
+        route=route, replans=outcome.replans, engine=outcome.engine, language=language,
+        sources=sources,
+        tool_calls=[c for r in outcome.results for c in r.tool_calls], handoff=handoff,
+        pending_action=next((r.pending_action for r in outcome.results if r.pending_action), None),
+        guardrails=verdict.flags, unsupported_numbers=unsupported, risk_flags=risks,
+        numbers_action=numbers_action, case_state=case_state, usage=Usage(**request_usage()),
+        prompt_versions=_log_prompts(trace_id),
+        # mesma evidência da checagem de números (com o cartão), mascarada como a resposta: o eval grava e o juiz lê
+        evidence=[mask_output(e, public=public) for e in evidence],
+        unsupported_claims=claim_report.as_list(), claims_action=claim_report.action,
+        steps=[supervisor.step_view(r, lambda t: mask_output(t, public=public)) for r in outcome.results])
