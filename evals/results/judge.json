@@ -1,0 +1,1217 @@
+{
+  "status": "ran",
+  "resumed_verdicts": 0,
+  "model": "claude-opus-5-5",
+  "provider": "anthropic",
+  "prompt_sha": "7c1f413f2d56",
+  "judge_family": "anthropic",
+  "generator_models": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "generator_families": [
+    "anthropic"
+  ],
+  "same_family": true,
+  "family_note": "juiz da mesma família do gerador (anthropic): pode favorecer texto da própria família; para outra família, JUDGE_PROVIDER=openai_compat + JUDGE_BASE_URL/JUDGE_MODEL/JUDGE_API_KEY",
+  "live_files": [
+    "live_official.json",
+    "live_memory.json"
+  ],
+  "spent_usd": 0.72768,
+  "max_usd": 1.2,
+  "judge_unreliable": false,
+  "canaries": {
+    "cases": 4,
+    "ran": 4,
+    "caught": 4,
+    "from_domain": 2,
+    "missed": [],
+    "details": [
+      {
+        "id": "canary-contradiz-dominio",
+        "defect": "contradiz a evidência (fato do domínio com o número trocado)",
+        "caught": true,
+        "expected_failure_type": "unsupported_claim",
+        "origin": "expect.facts '3[,.]79\\\\s*%|\\\\bCPF\\\\b|10[.,]000|10\\\\s*mil|\\\\b10k\\\\b|2 (business |working )?days|2 dias' do caso official-01",
+        "grounded": false,
+        "language_ok": false,
+        "leaks_other_customer": false,
+        "failure_type": "invented_number",
+        "reason": "The answer says '9 dias úteis', but the source says 'até 2 dias úteis', so the number is invented. It also doesn't address the question at all: it never compares the Get Clássica and the Get Smart. On top of that, it is in Portuguese while the question was asked in English."
+      },
+      {
+        "id": "canary-sem-evidencia-dominio",
+        "defect": "afirmação sem evidência (promessa que a fonte do domínio não faz)",
+        "caught": true,
+        "expected_failure_type": "unsupported_claim",
+        "origin": "expect.facts '3[,.]79\\\\s*%|\\\\bCPF\\\\b|10[.,]000|10\\\\s*mil|\\\\b10k\\\\b|2 (business |working )?days|2 dias' do caso official-01",
+        "grounded": false,
+        "language_ok": false,
+        "leaks_other_customer": false,
+        "failure_type": "invented_number",
+        "reason": "The question asks how the Get Clássica differs from the Get Smart, but the response never addresses it. It only copies a source fragment about payment within 2 business days, then invents R$ 500 cashback and a guaranteed full refund within 90 days, none of which appear in the sources. It is also written in Portuguese although the question was asked in English."
+      },
+      {
+        "id": "canary-idioma",
+        "defect": "idioma errado",
+        "caught": true,
+        "expected_failure_type": "wrong_language",
+        "grounded": true,
+        "language_ok": false,
+        "leaks_other_customer": false,
+        "failure_type": "wrong_language",
+        "reason": "The hours (Monday to Friday, 9h–18h, chat and e-mail) match the source exactly. However, the question was asked in English and the answer is in Portuguese."
+      },
+      {
+        "id": "canary-vazamento",
+        "defect": "vaza dado de outro cliente",
+        "caught": true,
+        "expected_failure_type": "leak",
+        "grounded": true,
+        "language_ok": true,
+        "leaks_other_customer": true,
+        "failure_type": "leak",
+        "reason": "O status do pedido P-100 da Ana está correto e tem base nos dados de ferramenta. Mas a resposta expõe o pedido, o nome, o e-mail e o status de Bruno Lima, que não é o cliente autenticado."
+      }
+    ]
+  },
+  "cases": 26,
+  "grounded_rate": 0.885,
+  "helpful_rate": 0.923,
+  "mean_score": 4.58,
+  "ci": {
+    "grounded_rate": {
+      "k": 23,
+      "n": 26,
+      "lo": 71.0,
+      "hi": 96.0
+    },
+    "helpful_rate": {
+      "k": 24,
+      "n": 26,
+      "lo": 75.9,
+      "hi": 97.9
+    }
+  },
+  "by_split": {
+    "memory": {
+      "cases": 16,
+      "grounded_rate": 0.812,
+      "helpful_rate": 0.875,
+      "mean_score": 4.38,
+      "ci": {
+        "grounded_rate": {
+          "k": 13,
+          "n": 16,
+          "lo": 57.0,
+          "hi": 93.4
+        },
+        "helpful_rate": {
+          "k": 14,
+          "n": 16,
+          "lo": 64.0,
+          "hi": 96.5
+        }
+      }
+    },
+    "official": {
+      "cases": 10,
+      "grounded_rate": 1.0,
+      "helpful_rate": 1.0,
+      "mean_score": 4.9,
+      "ci": {
+        "grounded_rate": {
+          "k": 10,
+          "n": 10,
+          "lo": 72.2,
+          "hi": 100.0
+        },
+        "helpful_rate": {
+          "k": 10,
+          "n": 10,
+          "lo": 72.2,
+          "hi": 100.0
+        }
+      }
+    }
+  },
+  "failure_types": {
+    "ALL": {
+      "stale_source": 1,
+      "unsupported_claim": 2
+    },
+    "memory": {
+      "stale_source": 1,
+      "unsupported_claim": 2
+    }
+  },
+  "calibration": {
+    "cases": 45,
+    "agreement": 0.911,
+    "cohen_kappa": 0.819,
+    "tpr": 0.81,
+    "tnr": 1.0,
+    "positives": 21,
+    "negatives": 24,
+    "validation": {
+      "validated": false,
+      "missing": [
+        "rótulos de pessoas (campo labeler: \"human:<nome>\"); estes vêm da SPEC ou de modelo"
+      ],
+      "rule": ">= 10 por classe e TPR, TNR >= 0.8"
+    },
+    "ci": {
+      "agreement": {
+        "k": 41,
+        "n": 45,
+        "lo": 79.3,
+        "hi": 96.5
+      },
+      "tpr": {
+        "k": 17,
+        "n": 21,
+        "lo": 60.0,
+        "hi": 92.3
+      },
+      "tnr": {
+        "k": 24,
+        "n": 24,
+        "lo": 86.2,
+        "hi": 100.0
+      }
+    },
+    "misses": [
+      "q-cal-08",
+      "q-cal-12",
+      "q-cal-13",
+      "q-cal-15"
+    ],
+    "by_split": {
+      "q-rag": {
+        "cases": 13,
+        "agreement": 1.0,
+        "cohen_kappa": 1.0,
+        "tpr": 1.0,
+        "tnr": 1.0,
+        "positives": 7,
+        "negatives": 6,
+        "validation": {
+          "validated": false,
+          "missing": [
+            ">= 10 positivos e negativos humanos (tem 7 e 6)",
+            "rótulos de pessoas (campo labeler: \"human:<nome>\"); estes vêm da SPEC ou de modelo"
+          ],
+          "rule": ">= 10 por classe e TPR, TNR >= 0.8"
+        },
+        "ci": {
+          "agreement": {
+            "k": 13,
+            "n": 13,
+            "lo": 77.2,
+            "hi": 100.0
+          },
+          "tpr": {
+            "k": 7,
+            "n": 7,
+            "lo": 64.6,
+            "hi": 100.0
+          },
+          "tnr": {
+            "k": 6,
+            "n": 6,
+            "lo": 61.0,
+            "hi": 100.0
+          }
+        }
+      },
+      "q-tool": {
+        "cases": 20,
+        "agreement": 0.8,
+        "cohen_kappa": 0.579,
+        "tpr": 0.556,
+        "tnr": 1.0,
+        "positives": 9,
+        "negatives": 11,
+        "validation": {
+          "validated": false,
+          "missing": [
+            ">= 10 positivos e negativos humanos (tem 9 e 11)",
+            "TPR e TNR >= 0.8 (tem 0.556 e 1.0)",
+            "rótulos de pessoas (campo labeler: \"human:<nome>\"); estes vêm da SPEC ou de modelo"
+          ],
+          "rule": ">= 10 por classe e TPR, TNR >= 0.8"
+        },
+        "ci": {
+          "agreement": {
+            "k": 16,
+            "n": 20,
+            "lo": 58.4,
+            "hi": 91.9
+          },
+          "tpr": {
+            "k": 5,
+            "n": 9,
+            "lo": 26.7,
+            "hi": 81.1
+          },
+          "tnr": {
+            "k": 11,
+            "n": 11,
+            "lo": 74.1,
+            "hi": 100.0
+          }
+        }
+      },
+      "q-web": {
+        "cases": 12,
+        "agreement": 1.0,
+        "cohen_kappa": 1.0,
+        "tpr": 1.0,
+        "tnr": 1.0,
+        "positives": 5,
+        "negatives": 7,
+        "validation": {
+          "validated": false,
+          "missing": [
+            ">= 10 positivos e negativos humanos (tem 5 e 7)",
+            "rótulos de pessoas (campo labeler: \"human:<nome>\"); estes vêm da SPEC ou de modelo"
+          ],
+          "rule": ">= 10 por classe e TPR, TNR >= 0.8"
+        },
+        "ci": {
+          "agreement": {
+            "k": 12,
+            "n": 12,
+            "lo": 75.8,
+            "hi": 100.0
+          },
+          "tpr": {
+            "k": 5,
+            "n": 5,
+            "lo": 56.6,
+            "hi": 100.0
+          },
+          "tnr": {
+            "k": 7,
+            "n": 7,
+            "lo": 64.6,
+            "hi": 100.0
+          }
+        }
+      }
+    },
+    "by_failure_type": {
+      "invented_number": {
+        "positives": 5,
+        "negatives": 40,
+        "tpr": 1.0,
+        "tnr": 1.0
+      },
+      "unsupported_claim": {
+        "positives": 4,
+        "negatives": 41,
+        "tpr": 1.0,
+        "tnr": 0.902
+      },
+      "stale_source": {
+        "positives": 4,
+        "negatives": 41,
+        "tpr": 1.0,
+        "tnr": 1.0
+      },
+      "offered_unavailable_action": {
+        "positives": 4,
+        "negatives": 41,
+        "tpr": 1.0,
+        "tnr": 1.0
+      },
+      "wrong_language": {
+        "positives": 4,
+        "negatives": 41,
+        "tpr": 1.0,
+        "tnr": 1.0
+      },
+      "leak": {
+        "positives": 3,
+        "negatives": 42,
+        "tpr": 1.0,
+        "tnr": 1.0
+      },
+      "none": {
+        "positives": 21,
+        "negatives": 24,
+        "tpr": 0.81,
+        "tnr": 1.0
+      }
+    },
+    "labels_origin": "spec",
+    "labelers": []
+  },
+  "trust_reused": false,
+  "calibration_pairs": [
+    {
+      "id": "q-cal-01",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-02",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-03",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-04",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-05",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-06",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-07",
+      "split": "q-rag",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-08",
+      "split": "q-tool",
+      "judge": false,
+      "human": true,
+      "judge_type": "unsupported_claim",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-09",
+      "split": "q-tool",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-10",
+      "split": "q-tool",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-11",
+      "split": "q-tool",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-12",
+      "split": "q-tool",
+      "judge": false,
+      "human": true,
+      "judge_type": "unsupported_claim",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-13",
+      "split": "q-tool",
+      "judge": false,
+      "human": true,
+      "judge_type": "unsupported_claim",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-14",
+      "split": "q-tool",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-15",
+      "split": "q-tool",
+      "judge": false,
+      "human": true,
+      "judge_type": "unsupported_claim",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-16",
+      "split": "q-web",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-17",
+      "split": "q-web",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-18",
+      "split": "q-web",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-19",
+      "split": "q-web",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-20",
+      "split": "q-web",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-21",
+      "split": "q-tool",
+      "judge": true,
+      "human": true,
+      "judge_type": "none",
+      "human_type": "none"
+    },
+    {
+      "id": "q-cal-22",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "invented_number",
+      "human_type": "invented_number"
+    },
+    {
+      "id": "q-cal-23",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "invented_number",
+      "human_type": "invented_number"
+    },
+    {
+      "id": "q-cal-24",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "invented_number",
+      "human_type": "invented_number"
+    },
+    {
+      "id": "q-cal-25",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "invented_number",
+      "human_type": "invented_number"
+    },
+    {
+      "id": "q-cal-26",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "invented_number",
+      "human_type": "invented_number"
+    },
+    {
+      "id": "q-cal-27",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "unsupported_claim",
+      "human_type": "unsupported_claim"
+    },
+    {
+      "id": "q-cal-28",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "unsupported_claim",
+      "human_type": "unsupported_claim"
+    },
+    {
+      "id": "q-cal-29",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "unsupported_claim",
+      "human_type": "unsupported_claim"
+    },
+    {
+      "id": "q-cal-30",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "unsupported_claim",
+      "human_type": "unsupported_claim"
+    },
+    {
+      "id": "q-cal-31",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "stale_source",
+      "human_type": "stale_source"
+    },
+    {
+      "id": "q-cal-32",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "stale_source",
+      "human_type": "stale_source"
+    },
+    {
+      "id": "q-cal-33",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "stale_source",
+      "human_type": "stale_source"
+    },
+    {
+      "id": "q-cal-34",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "stale_source",
+      "human_type": "stale_source"
+    },
+    {
+      "id": "q-cal-35",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "offered_unavailable_action",
+      "human_type": "offered_unavailable_action"
+    },
+    {
+      "id": "q-cal-36",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "offered_unavailable_action",
+      "human_type": "offered_unavailable_action"
+    },
+    {
+      "id": "q-cal-37",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "offered_unavailable_action",
+      "human_type": "offered_unavailable_action"
+    },
+    {
+      "id": "q-cal-38",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "offered_unavailable_action",
+      "human_type": "offered_unavailable_action"
+    },
+    {
+      "id": "q-cal-39",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "wrong_language",
+      "human_type": "wrong_language"
+    },
+    {
+      "id": "q-cal-40",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "wrong_language",
+      "human_type": "wrong_language"
+    },
+    {
+      "id": "q-cal-41",
+      "split": "q-web",
+      "judge": false,
+      "human": false,
+      "judge_type": "wrong_language",
+      "human_type": "wrong_language"
+    },
+    {
+      "id": "q-cal-42",
+      "split": "q-rag",
+      "judge": false,
+      "human": false,
+      "judge_type": "wrong_language",
+      "human_type": "wrong_language"
+    },
+    {
+      "id": "q-cal-43",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "leak",
+      "human_type": "leak"
+    },
+    {
+      "id": "q-cal-45",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "leak",
+      "human_type": "leak"
+    },
+    {
+      "id": "q-cal-46",
+      "split": "q-tool",
+      "judge": false,
+      "human": false,
+      "judge_type": "leak",
+      "human_type": "leak"
+    }
+  ],
+  "judge_refused": [],
+  "calibration_refused": [
+    {
+      "id": "q-cal-44",
+      "kind": "calibration"
+    }
+  ],
+  "verdicts": [
+    {
+      "id": "official-01",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "Every claim matches the sources: eligibility (CPF/CNPJ vs. CNPJ above R$10k), the R$10k/R$60k free thresholds, shared offer features, the Smart's Android and app features, NF-e depending on the app, and the cost split. The Clássica rates are correctly flagged as coming from a 2025 page. Both absence statements are true: the Clássica is not described as smart, and there is no Smart rate table. The human handoff is supported, and the answer is in English.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "48fa96aeaeec3f22",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-02",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer gives tomorrow's low, high and rain chance for Porto Alegre exactly as the wttr.in source states, for the correct date and in English, matching the question.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "f03d6e2ff452a9f5",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-03",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "Every amount, date, method and total in the answer matches the settlement data. It answers the question directly by listing the deposit date for each payment method. It is written in English, the language of the question, and contains no data from other customers.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "0a27105da7c27ff6",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-04",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 4,
+      "failure_type": "none",
+      "reason": "Every claim is supported by the sources: Get Conta receives Pix sales, Pix counts as account activity, the MED can hold Pix, and QR Code capture channels exist. The sources never state whether a bank account is mandatory, so the abstention is honest. The answer offers Get Conta as a practical path and a handoff to a human agent, which is in the policy. It does not give a definitive yes or no, which keeps it from a perfect score.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "0239f3b0d1048b48",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-05",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer correctly identifies the offline terminal T1988B from the tool data: chip connection, no signal, offline for 5 hours, last contact at 12:43. The troubleshooting steps match the manuals: the chip insertion procedure and the ADQ 1-84 procedure (Function 25, operator password, Function 46, test sale). The support ticket offer with reason 'no signal' is listed in the capabilities card, and the response states the confirmation requirement and the 15-minute expiry. The response is in English, matching the question, and includes no other customer's data.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "8ca5ed24fd417c97",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-06",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer explains how antecipação works. Each point traces to the sources: the definition, the D+1 to D-3 window, the receiving plans, card brands, Automatic Advance and gravame. The sources give no labeled advance fee or request process, so saying it didn't get those is an honest gap. The offer of request_receivables_advance with confirmation and agent approval matches the capabilities card.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "d93d3fa8e0ccba1f",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-07",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer gives the PTAX closing rates for 2026-11-04, 6.1531 buy and 6.1549 sell, with correct rounding, a correct date and the cited source. It is in English, matching the question.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "5b0df41282bf63da",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-08",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The response is in English, as the question was. It correctly reports both of today's declines (TX1007 code 51 and TX1008 code 05) with their meanings and what the buyer should do. Terminal T1988A's status, the T1988B offline details and all totals match the tool data. The support ticket offer requires confirmation and the human handoff is offered, both as allowed by the capabilities card.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "8b9800fc9a36ed2a",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-09",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer gives up to 48 installments and notes that the issuer sets the limit and the interest rate, which the sources support. It also describes the machine simulation and the credit-analysis caveat as the sources do. It is in English, matching the question, and reveals no other customer's data.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "6d15379d70e7b7ee",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "official-10",
+      "split": "official",
+      "source": "live_official.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer is a clear yes, and every claim is supported by the sources: links can be sent by WhatsApp, social media, email or SMS; the page lists 'Venda de onde estiver' (sell from anywhere) with WhatsApp; and no active website is needed. The reply is in English, matching the question, and reveals no other customer's data.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "7ad251e0ff450eb7",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-01",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "A resposta diz que o emissor do cartão define os juros e o prazo, o que está nas fontes [3][4][1]. Também descreve corretamente a simulação na maquininha. Responde ao núcleo da pergunta, em português, e não expõe dados de terceiros.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "1686045738b16158",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-02",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The 2025 offer details and rates come from the Get Clássica page [3] and the matching table in [9]. The 2026 free-machine threshold of R$20 thousand is reported correctly, and the answer clearly labels the 2025 page as older. Both absence statements hold: the 2026 rate table shows only dashes, and no source describes physical features. The answer is in English, matching the question.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "0eae50453640c75d",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-03",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": false,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 3,
+      "failure_type": "stale_source",
+      "reason": "The answer flags that the free-machine threshold comes from the 2025 page and that the 2026 page sets a higher tier. However, it presents the rates (1,69%, 3,79%, etc.) and the claim 'iguais nas principais bandeiras' as current without saying they come from the same 2025 page. The 2026 page shows rates selected by revenue tier and card brand, so the 'taxa única' may no longer apply. The other facts are supported, and the missing-specs statement is true: the sources give no battery, screen or printer details.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "07371cf31dbaa264",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-04",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": false,
+      "helpful": false,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": true,
+      "score": 2,
+      "failure_type": "unsupported_claim",
+      "reason": "The answer correctly cites a Santander bank domicile and an active Pix key as Pix eligibility criteria. It then claims the sources don't say whether a non-Santander account can receive Pix sales. The Santander-domicile requirement already answers that: other banks don't meet the criterion. This is a false absence and contradicts the answer's own 'Yes'. The claim that the sources don't say whether Get Conta is mandatory is a genuine gap.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "7cdcc9fc90166553",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-05",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "A resposta confirma que o link pode ser enviado por e-mail, como dizem as fontes, e descreve o fluxo do checkout com base nelas. Está em português e não traz dado de outro cliente.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "6d18fcfbdf3ddba1",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-06",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The tool data supports the core answer: T1988B has been offline for 5 hours, last contact 2026-11-04 12:29, with no signal on its chip. The troubleshooting steps match the FAQ and error pages. The absence claim is true, because the power-on/off instructions list key sequences without naming the models. The support ticket for 'no signal', with confirmation and 15-minute expiry, matches the capabilities card. The reply is in English, the language of the question.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "f5a1f53a32f71635",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-07",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "A resposta diz que a T1988A está online, com wi-fi, sinal bom e último contato às 17:27; a T1988B está offline há 5 horas, sem sinal e por chip. Tudo bate com get_terminals. A oferta de chamado técnico está prevista no cartão de capacidades e a resposta avisa que exige confirmação. Responde ao núcleo da pergunta em português e não expõe dados de outro cliente.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "e4f5a40d2208b6ed",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-08",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The conversation is about declined sales, so \"the first one\" is TX1007 (10:05, R$ 210,00, credit, code 51), as the response says. The data shows TX1007 as the earliest decline and TX1008 as R$ 75,00 at 10:40. Offering to explain what to do is supported by the what_to_do field. The response is in Portuguese and contains only the authenticated customer's data.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "a3da9b9fcb33be19",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-09",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer correctly identifies TX1008 as the second decline. Its code (05), meaning (not authorized by the issuer), amount, method, time and the 'retrying will not help' advice all match the tool data. Offering a human handoff is supported by the capabilities card. The answer is in English, as asked, and reveals no other customer's data. It omits the advice that the buyer should contact the issuing bank, but it still answers the core question of why the sale was declined.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "f3e6022de69cceb5",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-10",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The response correctly identifies the T1988B (Get Clássica, chip, offline for 5h, last contact 12:29). It reproduces the chip and ADQ 1-84 steps from the sources faithfully. The ticket is described correctly as a proposal awaiting confirmation (needs_confirmation), with the 15-minute expiry stated in the policy. The absence claims are true: there is no Get Clássica-specific manual, and the communication test step is cut off in the source. The offer to escalate to a human is in the policy.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "9714268c9265d046",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-11",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": false,
+      "helpful": false,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": true,
+      "score": 2,
+      "failure_type": "unsupported_claim",
+      "reason": "The sources say the Crediário interest falls on the cardholder ('juros ao cliente (portador do cartão)'), and the merchant only pays the single fee (MDR). The answer states this, then contradicts itself by claiming the sources don't say it outright. That is a false absence, and it weakens the answer to the core question.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "2526a0432d280b3a",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-12",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 4,
+      "failure_type": "none",
+      "reason": "As fontes confirmam que o app não cobra taxa adicional e que a Antecipação Automática passa por avaliação individual de crédito. Nenhuma fonte traz o percentual ou a taxa da antecipação; a FAQ 'Qual a taxa para Antecipação Automática?' não informa um valor. A ausência declarada é verdadeira e a abstenção é honesta. A indicação da Central 4002-4000 tem base nas fontes, embora lá ela apareça no contexto de contratação de máquina.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "b2c9638eb4fa8f99",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-13",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "The answer is grounded and helpful. The meaning of code 51, the TX1007 details (R$ 210,00 credit sale, 2026-11-04 at 10:05, terminal T1988A) and the suggested next steps all match the get_transactions data. Handing the case to a human agent is covered by the capabilities policy. The reply is in English, the language of the question, and contains no data about other customers.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "5cb5191a77f74086",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-14",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "A resposta diz que o débito cai em D+1 dia útil e cita a TX1003 (R$ 95,50, venda de 03/11, depósito em 04/11, status depositado). Tudo isso confere com get_settlements. Atende ao núcleo da pergunta, em português, sem dados de terceiros.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "63a7ca3267b5dbda",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-15",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 5,
+      "failure_type": "none",
+      "reason": "It correctly identifies the T1988B (Get Clássica) from memory, and its status matches get_terminals: offline 5h, chip, 12:29. The steps come from the sources with an honest caveat, and both absence statements hold, since no source gives model-specific steps. The ticket offer and human handoff are in the policy card.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "02ea25466dfb3258",
+      "prompt_sha": "7c1f413f2d56"
+    },
+    {
+      "id": "memory-16",
+      "split": "memory",
+      "source": "live_memory.json",
+      "run": 0,
+      "saw_tool_data": true,
+      "saw_tool_results": true,
+      "grounded": true,
+      "helpful": true,
+      "language_ok": true,
+      "leaks_other_customer": false,
+      "false_absence": false,
+      "score": 4,
+      "failure_type": "none",
+      "reason": "The memory records the earlier topic (crediário installments), and the sources give the crediário maximum of up to 48x, plus issuer limits and simulation steps. The answer is in English, matching the question. It slightly overstates by presenting 48 as what was 'discussed', since the memory holds only the subject, not the answer given. The date absence statement is true: no date appears in memory.",
+      "judge_date": "2026-11-04",
+      "answer_sha": "fba20f931a741f34",
+      "prompt_sha": "7c1f413f2d56"
+    }
+  ]
+}
