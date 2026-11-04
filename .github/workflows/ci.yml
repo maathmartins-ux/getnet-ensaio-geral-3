@@ -63,14 +63,19 @@ jobs:
           key: fastembed-${{ hashFiles('data/retriever.json', 'requirements-hybrid.lock') }}
       # vetores do corpus e medida da busca entre execuções: a chave interna é o conteúdo (modelo + texto; gold +
       # código), então o que vier de uma execução anterior só é usado se ainda vale. Sem isto, cada push vetorizava o
-      # corpus de novo no eval e no build da imagem (2–4 min de CPU cada).
+      # corpus de novo no eval e no build da imagem (2–4 min de CPU cada). Restaura o MAIS NOVO (a chave exata nunca
+      # existe: leva o id da execução) e só o `core` grava, porque só ele vetoriza tudo. Tentativa simulada da rodada
+      # 15: com a mesma chave nas 6 partes, o pedaço do replay que acaba em 1 min gravava 2 MB e a chave, imutável,
+      # ficava com eles; o core restaurava 2 MB, vetorizava a frio (eval gate 731 s) e não conseguia gravar.
       - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             var/embeddings
             var/retrieval_cache.json
-          key: vectors-${{ hashFiles('data/**', 'evals/retrieval*', 'evals/retrieval.d/**', 'src/app/rag.py', 'src/app/ingest.py') }}
-          restore-keys: vectors-
+          key: vectors-${{ hashFiles('data/**', 'evals/retrieval*', 'evals/retrieval.d/**', 'src/app/rag.py', 'src/app/ingest.py') }}-${{ github.run_id }}
+          restore-keys: |
+            vectors-${{ hashFiles('data/**', 'evals/retrieval*', 'evals/retrieval.d/**', 'src/app/rag.py', 'src/app/ingest.py') }}-
+            vectors-
       - run: pip install -r requirements-dev.lock -r requirements-hybrid.lock && pip install --no-deps -e .
       - run: python scripts/fetch_models.py
       # Mesmo comando que roda localmente: o CI não pode ter regra que a máquina não tem. Inclui a imagem
@@ -81,13 +86,14 @@ jobs:
         with:
           path: /home/runner/.cache/fastembed
           key: fastembed-${{ hashFiles('data/retriever.json', 'requirements-hybrid.lock') }}
-      - if: always()
+      # cancelado também grava: restaurou o mais novo antes, então o que grava é ele + o que calculou (nunca menos)
+      - if: always() && matrix.part == 'core'
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             var/embeddings
             var/retrieval_cache.json
-          key: vectors-${{ hashFiles('data/**', 'evals/retrieval*', 'evals/retrieval.d/**', 'src/app/rag.py', 'src/app/ingest.py') }}
+          key: vectors-${{ hashFiles('data/**', 'evals/retrieval*', 'evals/retrieval.d/**', 'src/app/rag.py', 'src/app/ingest.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   # A suíte inteira com a rede CORTADA: nada de download, chave ou serviço externo escondido nos testes.
   offline-tests:
