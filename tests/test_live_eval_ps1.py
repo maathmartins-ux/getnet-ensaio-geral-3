@@ -63,3 +63,20 @@ def test_missing_interpreter_fails_with_clear_message(tmp_path):
     out = subprocess.run([BASH, str(copy / "live_eval.sh"), "--dry-run"], capture_output=True, text=True,
                          encoding="utf-8", timeout=60, env=env)
     assert out.returncode == 1 and "LIVE_EVAL_PY" in out.stdout
+
+
+@pytest.mark.skipif(BASH is None, reason="sem bash")
+def test_without_venv_nor_live_eval_py_uses_python_from_path(tmp_path):
+    """Sessão do relógio na nuvem: repo sem .venv, deps no python do sistema (revisão da largada da rodada 15)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "python3").symlink_to(sys.executable)
+    env = {k: v for k, v in os.environ.items() if k not in ("LIVE_EVAL_PY", "VIRTUAL_ENV")}
+    env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+    copy = tmp_path / "scripts"
+    copy.mkdir()
+    shutil.copy(SH, copy / "live_eval.sh")
+    out = subprocess.run([BASH, str(copy / "live_eval.sh"), "--dry-run"], capture_output=True, text=True,
+                         encoding="utf-8", timeout=60, env=env)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "DRYRUN" in out.stdout

@@ -1,0 +1,20 @@
+
+ORQUESTRAÇÃO (vale por cima de qualquer "avise/mande ao dono" acima; RODADA 15, PRODUÇÃO):
+- O dono NÃO acompanha esta sessão. Quem acompanha é a Maestra A, session_011qmqFpm1AijAdQEQ7HP3Te, ATIVA (PLAYBOOK
+  §2.2): olha o seu `main` e esta sessão a cada 1–2 min e entrega correções em ramos fix/<x> (ou patch). Toda linha de
+  andamento (~5 min), todo bloqueio (pré-voo reprovado, aborted_quota, gate vermelho, split abortado, CI vermelha) e o
+  resumo final vão para ela com a tool send_message (session_id = session_011qmqFpm1AijAdQEQ7HP3Te). Nunca pare
+  esperando resposta; mensagem da Maestra A vale como resposta do dono nesta tentativa. Correção dela: aplique na hora
+  (`git fetch origin fix/<x> && git merge --no-ff origin/fix/<x>`, mensagem sem "maestra") e siga. Há também uma Maestra
+  B (qualidade): ela NUNCA fala com você; o que ela produz chega pela Maestra A.
+- Push sempre com retry (4 tentativas, 2/4/8/16 s) e confira com `git ls-remote origin main`. Junte commits (cada push
+  dispara a CI e cancela a do push anterior).
+- Conferência humana: DOIS rotuladores (Matheus, Bianca). Assim que a fumaça JULGADA (live_official.json,
+  live_memory.json e judge.json) estiver no main, mande à Maestra A numa linha "FUMAÇA JULGADA COMMITADA <sha>"; ela gera
+  e publica a página, importa as fichas no ~T+20, grava o consenso (~T+23) e entrega o ramo fix/rotulos: integre assim
+  que chegar (merge --no-ff), antes do `make final`. Não espere parado pelas fichas.
+- Logo depois do commit do gate verde (passo 4), mande "GATE COMMITADO <sha>": a Maestra A dispara a CI à mão (sinal
+  cedo). Os arquivos só do kit (CLAUDE.md, scripts/ensaio_overlay.sh, scripts/medir_forks.py) saem SÓ pelo pré-voo: não
+  os remova nem commite a remoção antes dele.
+- O relógio de 58 min começa no seu 1º commit (o `chore: scaffold`). O plano fecha em T+50; T+50→T+58 é folga. NADA
+  depois de T+58.

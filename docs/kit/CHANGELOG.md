@@ -26,6 +26,17 @@ Cada item entrou com teste e a suíte inteira verde.
 - **Operação**: vigia (`docs/kit/tools/vigia.sh`), Maestra B com prompt fixo, nenhuma espera em 1º plano no relógio.
 - **Correções do ensaio geral**: README montado sem marcador `{{ }}` (o pré-voo o tratava como modelo); testes de tempo
   do guardrail com folga para a máquina carregada; não commitar os arquivos só do kit antes do pré-voo (ele os tira).
+- **Juiz sem provedor recusa** os arquivos explícitos (sai com 2 e não toca o `judge.json`); todo comando do juiz no
+  kit leva `LLM_PROVIDER=anthropic` e `--max-usd`.
+- **Checagens do kit vermelhas à toa**: títulos de commit e README ⇔ evidência só do `chore: scaffold` em diante (no
+  repo do kit passam declaradas; na tentativa nada muda, teste dos 2 lados); ruff limpo com o domínio guardado fora
+  do lint do kit.
+- **Rodada 1 sem `.venv`**: `scripts/live_eval.sh` (e o `.ps1`) usa o `LIVE_EVAL_PY` explícito, senão a `.venv`,
+  senão o `python3`/`python` do PATH. A sessão do relógio na nuvem instala no sistema e parava no T+9 com "Falta a
+  venv" (achado da Maestra B na revisão da largada; teste sem `.venv` nem `LIVE_EVAL_PY`).
+- **Maestras entrelaçadas** (ordem do dono, 04/11 à tarde; PLAYBOOK §2.2b): a A não age no alvo em que a B está
+  processando, cada ramo tem dona, mensagem nova vai na fila e nada vai ao ensaio final nem à produção sem a revisão
+  da B; só um bloqueio do relógio deixa a A agir antes.
 - Ficou fora, declarado: Pix sem conta bancária (o cabeçalho por trecho subiu o `sup-pix-09` ao top-5, mas o MRR caiu);
   antecipação quando o router não faz a 2ª busca (corrigir mudaria o pedido de todo "como funciona").
 

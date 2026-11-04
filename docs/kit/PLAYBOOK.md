@@ -241,6 +241,19 @@ patch) à M, sem esperar pedido.
   na fila de uma sessão travada).
 - **Sem orquestrador acima das duas:** o dono decide cortes e o "vai ou não vai"; o vigia automático faz a parte de
   alarme sem custo de LLM. Cada camada a mais acrescenta um salto de mensagem entre a ordem e a execução.
+- **Entrelaçadas (diretriz do dono, 04/11 à tarde; vale no ensaio geral e na produção).** Na preparação do kit da
+  rodada 15, a A seguiu adiante (lançou sessão, integrou) enquanto a B ainda processava, e os PRs dela ficaram
+  vermelhos sem leitura. Desde então:
+  1. enquanto a B processa, a A não age no mesmo alvo (kit, repo da tentativa, sessão do relógio): não commita, não
+     integra, não lança sessão; lê o estado e espera o `PRONTO` dela;
+  2. cada arquivo ou ramo tem uma dona combinada antes (a B: seus `fix/*`/`b/*`; a A: `main` via relógio, integração,
+     CLAUDE.md, este §2.2b e as Regras do prompt da B); nenhuma mexe no da outra;
+  3. mensagem nova para a B vai na fila (`send_message` com `priority: "later"`), sem interromper o passo dela;
+  4. todo achado da B é lido e levado em conta antes do próximo passo; nada vai ao ensaio final nem à produção sem a
+     revisão dela;
+  5. no relógio, só a A fala com a sessão da tentativa e integra depois do `PRONTO`. Exceção que só faz sentido no
+     relógio: bloqueio dele (espera em 1º plano, pré-voo reprovado, CI vermelha, split abortado). A A age na hora,
+     porque o relógio não espera, e avisa a B logo depois.
 
 ### 2.3 Tempo do dono dentro do relógio (≈ 20 min, em três janelas)
 

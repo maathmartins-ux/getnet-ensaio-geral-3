@@ -60,7 +60,7 @@ Passos (horários do PLAYBOOK §2.4; eval, gate e check SEMPRE em 2º plano rast
    Completa: COMMIT + PUSH de evals/results/live_official.json, live_memory.json e judge.json NA HORA, antes de qualquer
    outro passo (a página de rotulagem precisa de ≥ 20 respostas reais JULGADAS: ensaio 14, página da fumaça sem juiz,
    juiz × humano "validado 0"; ensaio 13: um `make eval` em 1º plano antes disso atrasou a página ~4 min).
-3. ~T+7: avise a maestra numa linha ("fumaça julgada commitada, publique a página para <<NOMES DOS 2 ROTULADORES>>"). Ela
+3. ~T+7: avise a maestra numa linha, com estas palavras: "FUMAÇA JULGADA COMMITADA <sha>" (rotuladores: <<NOMES DOS 2 ROTULADORES>>). Ela
    publica a página; J1 T+8→T+20 (cada um sozinho: 2 exemplos de treino e 23 situações às cegas, 20 reais julgadas + 3
    adulteradas); no T+20 ela importa e manda as divergências; J1b consenso T+20→T+23 (os dois juntos) e ela grava (`evals.label --consensus`, ramo fix/rotulos).
    Se a maestra não estiver: `python scripts/label_page.py --n 20 --splits official,memory --perturb 3 --require-judged --raters <<NOMES DOS 2 ROTULADORES>>`,
@@ -80,7 +80,7 @@ Passos (horários do PLAYBOOK §2.4; eval, gate e check SEMPRE em 2º plano rast
    terminados: OOM no ensaio v5.4): `scripts/live_eval.sh --max-usd 20` (official e memory repeat 3, o resto 1; o juiz
    roda SEM teto e julga cada split ao terminar). Leia a 1ª linha do log: `AVISO: teto` = suba o teto. A ablação do
    replan roda junto: `python -m evals.run_evals --live --ablate-replan --mode no_needs --split real --repeat 1 --max-usd 2`.
-   Espere com Monitor (until), nunca sleep. Split com status ≠ complete: rode SÓ ele de novo.
+   Espere com Monitor (o `until` vai DENTRO do Monitor), nunca em 1º plano. Split com status ≠ complete: rode SÓ ele de novo.
 6. T+21→T+24: `python -m evals.failure_modes` e cada reprovação do juiz CASO A CASO (`reason`, `failure_type`): corrija a
    CAUSA no domínio (corpus, tool, regra, cartão de capacidades), com teste e o caso no texto do commit. Nunca prompt
    genérico. Um split por vez ao verificar.

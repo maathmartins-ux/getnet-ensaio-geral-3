@@ -30,10 +30,18 @@ done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-# LIVE_EVAL_PY: intérprete explícito (a CI Linux não tem .venv; sem ele o passo quebra na CI)
-PY="${LIVE_EVAL_PY:-$ROOT/.venv/bin/python}"
-[[ -x "$PY" ]] || PY="$ROOT/.venv/Scripts/python.exe"  # Git Bash no Windows
-[[ -x "$PY" ]] || { echo "Falta a venv em $ROOT/.venv ou LIVE_EVAL_PY (references/brief-de-fork.md, seção Ambiente)."; exit 1; }
+# Intérprete: LIVE_EVAL_PY explícito (se aponta para o que não existe, é erro: nada de cair em outro em silêncio) →
+# .venv do repo → python3/python do PATH. A sessão do relógio na nuvem não tem .venv (o repo nasce vazio e o pip vai
+# para o sistema): sem o PATH, a rodada 1 parava aqui (revisão da largada da rodada 15).
+if [[ -n "${LIVE_EVAL_PY:-}" ]]; then
+  PY="$LIVE_EVAL_PY"
+  [[ -x "$PY" ]] || { echo "LIVE_EVAL_PY=$PY não existe ou não é executável (references/brief-de-fork.md, seção Ambiente)."; exit 1; }
+else
+  PY="$ROOT/.venv/bin/python"
+  [[ -x "$PY" ]] || PY="$ROOT/.venv/Scripts/python.exe"  # Git Bash no Windows
+  [[ -x "$PY" ]] || PY="$(command -v python3 || command -v python || true)"
+  [[ -n "$PY" && -x "$PY" ]] || { echo "Sem intérprete: nem .venv em $ROOT/.venv, nem LIVE_EVAL_PY, nem python3/python no PATH."; exit 1; }
+fi
 
 if [[ -f .env ]]; then  # exporta KEY=VALUE sem ecoar nada
   while IFS='=' read -r key value; do

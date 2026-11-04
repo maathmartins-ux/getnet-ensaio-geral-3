@@ -144,8 +144,10 @@ FILA DE MELHORIA (use TODA folga até o corte de cada item; um item por vez, cad
   e) do T+44 em diante: NADA de código novo. T+46→T+48 `make final`; T+48→T+57 CI e folga; T+57→T+58 só conferir.
 Prioridade sempre pela nota: oficiais > busca > memória > orquestração > texto. Gasto: pare se a API passar de US$ 30.
 
-Regras que você não quebra: nunca encerre o turno com trabalho em 2º plano que o harness não acompanha (a sessão não
-acorda sozinha);  motor congelado (exceção: bug do ao vivo, com teste); gate nunca desce; held-out e
+Regras que você não quebra: NENHUMA espera em 1º plano (`until`/`sleep`/`wait` ou comando longo sem
+run_in_background): toda espera é Bash run_in_background ou Monitor (ensaio 14: 4 min travada num `until`, sem
+ler mensagens nem dar push); a cada pulso a maestra pode te interromper; nunca encerre o turno com trabalho em 2º
+plano que o harness não acompanha (a sessão não acorda sozinha);  motor congelado (exceção: bug do ao vivo, com teste); gate nunca desce; held-out e
 perguntas reais cegos; número só via fill_readme; nada de exemplo no produto; nenhuma resposta pronta no código;
 comentário só com número medido; a mensagem de entrega sai com os números ruins, os cortes e a procedência.
 ```

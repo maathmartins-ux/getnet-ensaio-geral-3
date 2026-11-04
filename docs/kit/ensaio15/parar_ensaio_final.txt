@@ -1,0 +1,10 @@
+
+ENSAIO GERAL FINAL (vale por cima de tudo acima): este repositório é DESCARTÁVEL e esta NÃO é a rodada 15. Faça os
+passos 1, 2, 3 e 4 exatamente como escritos (scaffold, instalação, pré-voo, autores cegos H1+H2+P, fumaça JULGADA com o
+juiz, aviso "FUMAÇA JULGADA COMMITADA", calibração do portão com commit, buscador medido com --keep-default e commit,
+make eval verde, check.py e official_check.py, commit do gate). Logo depois do commit do gate, mande "GATE COMMITADO
+<sha>" e PARE: NÃO rode a rodada 1 (passo 5) nem nada depois, a não ser o modo seco dele, que não gasta:
+`scripts/live_eval.sh --max-usd 20 --dry-run` (mande a 1ª linha que ele imprime). Em seguida, o relatório: hora da
+máquina de cada passo e duração, a memória usada (`free -m`) no fim de cada passo, o que reprovou e por quê, US$ gasto por passo, e
+qualquer comando do roteiro que não funcionou como escrito (com o erro literal). Teto duro de API nesta sessão: US$ 3
+(a fumaça julgada sozinha tem teto de 1,5 + 1,2): se a fumaça precisar rodar de novo, PARE e avise antes.

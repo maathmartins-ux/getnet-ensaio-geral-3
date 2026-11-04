@@ -46,6 +46,9 @@ markers = ["postgres: variante do teste no backend Postgres (precisa de TEST_DAT
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# O domínio guardado para montar (docs/kit/tools/dominio.py): fora do repo da tentativa o pacote do desafio não
+# existe e o ruff ordenava os imports dele como de terceiros; montado, o mesmo código é lintado em src/ e tests/.
+extend-exclude = ["docs/kit/dominio/files"]
 
 [tool.ruff.lint]
 # Conjunto explícito: não depender do padrão da versão instalada.

@@ -1,7 +1,9 @@
 import sys
+
 sys.path.insert(0, 'src')
 from app.agents import expand_query
 from app.rag import get_retriever
+
 r = get_retriever()
 qs = ["Do I need a bank account to receive my sales via Pix?",
       "preciso de conta bancária para receber vendas via Pix",

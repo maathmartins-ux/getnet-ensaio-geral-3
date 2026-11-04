@@ -23,3 +23,10 @@ e, se vier desligado, manda o link ao dono com o lembrete (PLAYBOOK, A9).
 Diretriz do dono (04/11): a sessão maestra é ATIVA no ensaio e na produção: monitora minuto a minuto (git log de
 origin/main e estado da sessão do relógio a cada 1–2 min), captura falha e já corrige, entra no processo quando
 precisar e pega tarefas para si para agilizar. Nunca fica passiva esperando dar errado (PLAYBOOK §2.2).
+
+Diretriz do dono (04/11, tarde): as Maestras A e B trabalham ENTRELAÇADAS, no ensaio geral e na produção
+(PLAYBOOK §2.2b): enquanto a B processa, a A não age no mesmo alvo (kit, repo da tentativa, sessão do relógio) e
+espera o PRONTO; cada arquivo/ramo tem uma dona combinada; mensagem nova à B vai na fila (priority "later"); todo
+achado da B é pesado antes do próximo passo e nada vai ao ensaio final nem à produção sem a revisão dela; no relógio
+só a A fala com a sessão da tentativa, e só um bloqueio dele (espera em 1º plano, pré-voo reprovado, CI vermelha,
+split abortado) a deixa agir na hora, avisando a B depois.

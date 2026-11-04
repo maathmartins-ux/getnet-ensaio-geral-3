@@ -27,9 +27,18 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-# LIVE_EVAL_PY: intérprete explícito (a CI Linux não tem .venv; sem ele o passo quebra na CI)
-$py = if ($env:LIVE_EVAL_PY) { $env:LIVE_EVAL_PY } else { Join-Path $root ".venv\Scripts\python.exe" }
-if (-not (Test-Path $py)) { Write-Host "Falta a venv em $py ou LIVE_EVAL_PY (references/brief-de-fork.md, seção Ambiente)."; exit 1 }
+# Mesma ordem do live_eval.sh: LIVE_EVAL_PY explícito (inexistente = erro) → .venv → python/python3 do PATH
+if ($env:LIVE_EVAL_PY) {
+  $py = $env:LIVE_EVAL_PY
+  if (-not (Test-Path $py)) { Write-Host "LIVE_EVAL_PY=$py não existe (references/brief-de-fork.md, seção Ambiente)."; exit 1 }
+} else {
+  $py = Join-Path $root ".venv\Scripts\python.exe"
+  if (-not (Test-Path $py)) {
+    $cmd = Get-Command python, python3 -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cmd) { Write-Host "Sem intérprete: nem .venv em $root\.venv, nem LIVE_EVAL_PY, nem python no PATH."; exit 1 }
+    $py = $cmd.Source
+  }
+}
 
 if (Test-Path ".env") {
     Get-Content ".env" | Where-Object { $_ -match '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=' } | ForEach-Object {

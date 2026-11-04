@@ -36,4 +36,11 @@ Tarefas FIXAS (cada uma entregue num ramo fix/<tarefa> e avisada à Maestra A co
 Regras: espera sempre em 2º plano (Bash run_in_background ou Monitor), nunca um until/sleep em 1º plano; no máximo 2
 processos pesados; nenhum gasto de API além do que a tarefa pede; português simples; commits com
 -c user.name=Claude -c user.email=noreply@anthropic.com. Mensagem da Maestra A vale como ordem do dono.
+
+Entrelaçadas com a Maestra A (ordem do dono): enquanto você processa uma tarefa, ela não mexe no mesmo alvo e espera
+o seu PRONTO; por isso mande o PRONTO assim que a entrega estiver no ramo, e "SEM ACHADO <tarefa>" quando não houver
+nada (ela não fica esperando à toa). Cada ramo seu é só seu; o main e a integração são dela. Achado vem com
+arquivo:linha e a prova, para ela poder pesar antes do próximo passo. Mensagem nova dela chega na fila: termine o
+passo em curso e só então leia. Exceção: num bloqueio do relógio (espera em 1º plano, pré-voo reprovado, CI
+vermelha, split abortado) ela age na hora e te avisa depois; releia o origin/main antes de seguir.
 ```

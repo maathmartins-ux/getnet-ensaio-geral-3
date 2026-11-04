@@ -402,6 +402,23 @@ def docs_links_exist(root: Path = ROOT) -> tuple[str, bool, float, str]:
     return "docs sem link para arquivo inexistente", not missing, time.perf_counter() - t0, "; ".join(missing[:10])
 
 
+def scaffold_commits(root: Path = ROOT) -> list[str]:
+    """Commits `chore: scaffold` (do mais novo ao mais antigo). Nenhum = repositório do KIT: a tentativa sempre começa
+    com ele (o kit entra por `git archive`, sem histórico)."""
+    return subprocess.run(["git", "log", "--format=%H", "--grep=^chore: scaffold"], cwd=root, check=False,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.split()
+
+
+def readme_matches_evidence(root: Path = ROOT) -> tuple[str, bool, float, str]:
+    """`fill_readme --check` na tentativa. No repositório do KIT (sem `chore: scaffold`) o README é o modelo com
+    marcadores e evals/results/ é a medida do domínio de exemplo: passa, declarado (04/11: todo PR do kit vermelho
+    por isso). Na tentativa nada muda."""
+    name = "README ⇔ evidência commitada"
+    if not scaffold_commits(root):
+        return name, True, 0.0, "repo do kit (sem chore: scaffold): a regra vale na tentativa"
+    return step(name, [PY, "scripts/fill_readme.py", "--check"])
+
+
 def commit_titles_clean(root: Path = ROOT) -> tuple[str, bool, float, str]:
     """Nenhum título de commit com `{{` ou `}}` do scaffold em diante: a linha do tempo do README copia os títulos da
     tentativa, um `{{N}}` vira marcador de modelo e a CI do último commit fica vermelha. Sem commit `chore: scaffold`
@@ -409,8 +426,7 @@ def commit_titles_clean(root: Path = ROOT) -> tuple[str, bool, float, str]:
     git log inteiro deixava todo ramo do kit vermelho por títulos do próprio kit (04/11)."""
     t0 = time.perf_counter()
     name = "títulos de commit sem marcador {{ }}"
-    found = subprocess.run(["git", "log", "--format=%H", "--grep=^chore: scaffold"], cwd=root, check=False,
-                           capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.split()
+    found = scaffold_commits(root)
     if not found:
         return name, True, time.perf_counter() - t0, "repo do kit (sem chore: scaffold): a regra vale na tentativa"
     first = found[-1]  # o scaffold mais antigo: a tentativa começa nele
@@ -661,7 +677,7 @@ def main() -> int:
         cited_tests_pass(junit),
         # o gate grava num arquivo à parte: evals/results/ só muda quando alguém decide commitar a medida
         step("eval gate", [PY, "-m", "evals.run_evals", "--out", str(ROOT / "var" / "check-eval.json")]),
-        step("README ⇔ evidência commitada", [PY, "scripts/fill_readme.py", "--check"]),
+        readme_matches_evidence(),
         # a evidência do juiz não se contradiz: resumo de cada live_*.json = judge.json (rejulgado guarda a 1ª
         # passada), veredito do texto de hoje, held-out sem `reason`, human_review.json = o --report de hoje. Rodada
         # 10: live_official.json dizia 19/30 ao lado do 30/30 publicado, e o juiz × humano era de outra bateria
